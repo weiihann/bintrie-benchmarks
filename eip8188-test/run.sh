@@ -20,7 +20,7 @@ set -euo pipefail
 #   - spamoor binary at ../spamoor/bin/spamoor (or SPAMOOR_BIN env var)
 #
 # Exit codes: 0=pass, 1=preflight, 2=build, 3=chain gen, 4=inject,
-#             5=inspect, 6=identify
+#             5=inspect, 6=identify, 7=convert, 8=lazy-materialise verify
 # =============================================================================
 
 # Configuration
@@ -270,17 +270,212 @@ if [ "$NUM_SUBTREES" -lt 1 ]; then
 fi
 pass "Identified $NUM_SUBTREES inactive subtree root(s); trie root correctly NOT emitted"
 
+# ---------------------------------------------------------------------------
+# Step 6: Convert inactive subtrees into the inactive file
+# ---------------------------------------------------------------------------
+# Same parameters as Step 5. Convert moves the identified subtrees out of
+# chaindb into <chaindata>/inactive.bin, writing 17-byte stubs in their
+# place. After this step, geth must be able to read the converted accounts
+# transparently via the auto-attached archive resolver.
+
+log "Step 6: Converting inactive subtrees..."
+
+INACTIVE_FILE="$DATADIR/geth/chaindata/inactive.bin"
+
+if ! "$GETH_BIN" --datadir "$DATADIR" db convert-inactive \
+  --fork-block "$FORK_BLOCK" \
+  --blocks-per-period "$BLOCKS_PER_PERIOD" \
+  --current-period "$IDENTIFY_CURRENT_PERIOD" \
+  --inactive-min-age "$IDENTIFY_THRESHOLD" \
+  --scope account \
+  --inactive-file "$INACTIVE_FILE" \
+  > "$LOG_DIR/convert.log" 2>&1; then
+  log "  convert log tail:"
+  tail -20 "$LOG_DIR/convert.log"
+  fail 7 "convert-inactive failed"
+fi
+
+if [ ! -s "$INACTIVE_FILE" ]; then
+  fail 7 "inactive.bin not created or empty at $INACTIVE_FILE"
+fi
+INACTIVE_SIZE=$(wc -c < "$INACTIVE_FILE" | tr -d ' ')
+pass "convert-inactive completed; inactive.bin size = $INACTIVE_SIZE bytes"
+
+# Sanity: re-run inspect-periods AFTER conversion. Inspect-periods iterates
+# the snapshot keyspace, NOT the trie keyspace, so it should still see the
+# accounts (snapshot is unchanged by conversion).
+log "  Re-running inspect-periods after conversion..."
+INSPECT_AFTER=$("$GETH_BIN" --datadir "$DATADIR" db inspect-periods --json 2>/dev/null) || true
+if [ -z "$INSPECT_AFTER" ]; then
+  fail 7 "inspect-periods after convert produced no output"
+fi
+ACCOUNTS_AFTER=$(echo "$INSPECT_AFTER" | python3 -c \
+  "import json,sys; print(json.load(sys.stdin).get('total_accounts', 0))")
+if [ "$ACCOUNTS_AFTER" -lt 1 ]; then
+  fail 7 "inspect-periods after convert reports 0 accounts"
+fi
+pass "Snapshot still has $ACCOUNTS_AFTER accounts after conversion"
+
+# Sanity: start geth in dev mode pointing at the converted datadir, query
+# the seed account's balance, expect a non-error response. Reads of any
+# account whose subtree was converted must transparently follow the stub
+# into inactive.bin and return the original value.
+log "  Restarting geth to verify reads via inactive file..."
+
+"$GETH_BIN" \
+  --datadir "$DATADIR" \
+  --dev --dev.period 1 --dev.gaslimit 30000000 \
+  --miner.pending.feeRecipient "$SEED_ACCOUNT" \
+  --http --http.addr 127.0.0.1 --http.port 8545 \
+  --http.api eth,net,web3,debug \
+  --nodiscover --maxpeers 0 \
+  --rpc.allow-unprotected-txs --rpc.txfeecap 0 \
+  --verbosity 3 \
+  > "$LOG_DIR/geth-postconvert.log" 2>&1 &
+GETH_PID=$!
+
+if ! wait_for_rpc 8545; then
+  log "  geth-postconvert log tail:"
+  tail -30 "$LOG_DIR/geth-postconvert.log"
+  fail 7 "geth failed to start after conversion"
+fi
+
+# Confirm the inactive file was attached.
+if ! grep -q "EIP-8188 inactive file attached" "$LOG_DIR/geth-postconvert.log"; then
+  log "  Expected log line 'EIP-8188 inactive file attached' not found:"
+  grep -i "inactive\|EIP-8188" "$LOG_DIR/geth-postconvert.log" || true
+  fail 7 "inactive file not attached on geth restart"
+fi
+
+# Read the seed account's balance — it's the active account, served from
+# main chaindb (not via stub). This confirms post-conversion chain still
+# functions.
+SEED_BALANCE=$(curl -sf http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$SEED_ACCOUNT\",\"latest\"],\"id\":1}" \
+  | python3 -c "import json,sys; print(int(json.load(sys.stdin).get('result','0x0'),16))")
+
+if [ -z "$SEED_BALANCE" ] || [ "$SEED_BALANCE" = "0" ]; then
+  fail 7 "seed account balance is 0 after conversion (expected non-zero)"
+fi
+pass "Seed account balance after conversion: $SEED_BALANCE wei"
+
+# ---------------------------------------------------------------------------
+# Step 7: Modify a CONVERTED account and verify hybrid (lazy materialisation)
+# ---------------------------------------------------------------------------
+# Send a transaction from the seed account (active, lives in chaindb) to a
+# random new address. Most of the trie has been converted into stubs, so the
+# trie write at COMMIT time will descend through stub paths. The lazy
+# materialiser walks just the modified paths, leaving off-path siblings as
+# *expiredNode references. At commit time these *expiredNode children fold
+# into hybrid (0x01) chaindb entries.
+#
+# Verification:
+#   - chaindb gains at least one hybrid (0x01) entry post-modification.
+#   - subsequent reads (modified address + still-stubbed siblings) work.
+
+log "Step 7: Verifying lazy materialisation produces hybrid entries..."
+
+# Use spamoor again (it already handles signing with the seed privkey) to
+# generate state mutations that touch trie paths previously stubbed by
+# convert-inactive. With --random-target, each transfer credits a fresh
+# address whose keccak path may descend into a converted (stubbed) subtree
+# — when it does, the lazy materialiser fires and emits hybrid entries.
+log "  Sending follow-up spamoor transactions to trigger trie writes across stubs..."
+"$SPAMOOR_BIN" eoatx \
+  --rpchost "http://localhost:8545" \
+  --privkey "0x$SEED_KEY" \
+  --count 30 \
+  --throughput 10 \
+  --max-pending 5 \
+  --random-target \
+  --amount 1000 \
+  > "$LOG_DIR/spamoor-postconvert.log" 2>&1 || true
+sleep 5
+
+# Confirm the chain advanced (so the new state is mined).
+BLOCK_AFTER=$(get_block_number)
+if [ "$BLOCK_AFTER" -le "$BLOCK_NUM" ]; then
+  fail 8 "chain did not advance post-conversion (block stuck at $BLOCK_AFTER)"
+fi
+pass "Chain advanced from $BLOCK_NUM to $BLOCK_AFTER post-conversion"
+
+# Stop geth so we can inspect chaindb.
+log "  Stopping geth to inspect chaindb..."
+kill -TERM "$GETH_PID" 2>/dev/null || true
+sleep 5
+if kill -0 "$GETH_PID" 2>/dev/null; then
+  kill -9 "$GETH_PID" 2>/dev/null || true
+fi
+wait "$GETH_PID" 2>/dev/null || true
+GETH_PID=""
+rm -f "$DATADIR/geth/chaindata/LOCK" 2>/dev/null || true
+
+# Inspect chaindb: count trie-node entries by kind.
+log "  Counting chaindb trie-node entries by kind..."
+COUNTS_JSON=$("$GETH_BIN" --datadir "$DATADIR" db count-trienode-kinds --json 2>/dev/null) || \
+  fail 8 "count-trienode-kinds failed"
+log "  Counts: $COUNTS_JSON"
+
+ACCT_HYBRIDS=$(echo "$COUNTS_JSON" | python3 -c \
+  "import json,sys; print(json.load(sys.stdin)['account_trie']['hybrids'])")
+ACCT_STUBS=$(echo "$COUNTS_JSON" | python3 -c \
+  "import json,sys; print(json.load(sys.stdin)['account_trie']['stubs'])")
+ACCT_RLP=$(echo "$COUNTS_JSON" | python3 -c \
+  "import json,sys; print(json.load(sys.stdin)['account_trie']['standard_rlp'])")
+
+if [ "$ACCT_HYBRIDS" -lt 1 ]; then
+  fail 8 "expected >=1 hybrid (0x01) entry after modifying converted account; got $ACCT_HYBRIDS (stubs=$ACCT_STUBS rlp=$ACCT_RLP)"
+fi
+pass "chaindb has $ACCT_HYBRIDS hybrid entries (account trie); stubs=$ACCT_STUBS rlp=$ACCT_RLP"
+
+# Restart geth, query the seed account (active), verify it still resolves
+# correctly across the hybrid layer.
+log "  Restarting geth to verify reads across hybrid entries..."
+"$GETH_BIN" \
+  --datadir "$DATADIR" \
+  --dev --dev.period 1 --dev.gaslimit 30000000 \
+  --miner.pending.feeRecipient "$SEED_ACCOUNT" \
+  --http --http.addr 127.0.0.1 --http.port 8545 \
+  --http.api eth,net,web3,debug \
+  --nodiscover --maxpeers 0 \
+  --rpc.allow-unprotected-txs --rpc.txfeecap 0 \
+  --verbosity 3 \
+  > "$LOG_DIR/geth-postmodify.log" 2>&1 &
+GETH_PID=$!
+wait_for_rpc 8545
+
+SEED_BAL_AFTER_RESTART=$(curl -sf http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$SEED_ACCOUNT\",\"latest\"],\"id\":1}" \
+  | python3 -c "import json,sys; print(int(json.load(sys.stdin).get('result','0x0'),16))")
+if [ -z "$SEED_BAL_AFTER_RESTART" ] || [ "$SEED_BAL_AFTER_RESTART" = "0" ]; then
+  fail 8 "after restart: seed balance is 0 (read across hybrid failed)"
+fi
+pass "Seed balance ($SEED_BAL_AFTER_RESTART wei) readable after restart"
+
+# Stop the post-modify geth.
+log "  Stopping geth..."
+kill -TERM "$GETH_PID" 2>/dev/null || true
+sleep 5
+if kill -0 "$GETH_PID" 2>/dev/null; then
+  kill -9 "$GETH_PID" 2>/dev/null || true
+fi
+wait "$GETH_PID" 2>/dev/null || true
+GETH_PID=""
+
 # Summary
 log ""
 log "=== TEST PASSED ==="
-log "  Geth branch:        $CURRENT_BRANCH"
-log "  Chain head:         block $BLOCK_NUM"
-log "  Fork block:         $FORK_BLOCK"
-log "  Blocks/period:      $BLOCKS_PER_PERIOD"
-log "  Seed period:        $MAX_ACCT_PERIOD (from fixture block $FIXTURE_BLOCK)"
-log "  Identify threshold: $IDENTIFY_THRESHOLD (current=$IDENTIFY_CURRENT_PERIOD)"
-log "  Inactive subtrees:  $NUM_SUBTREES"
-log "  Test directory:     $TEST_DIR"
+log "  Geth branch:         $CURRENT_BRANCH"
+log "  Chain head:          block $BLOCK_NUM"
+log "  Fork block:          $FORK_BLOCK"
+log "  Blocks/period:       $BLOCKS_PER_PERIOD"
+log "  Seed period:         $MAX_ACCT_PERIOD (from fixture block $FIXTURE_BLOCK)"
+log "  Identify threshold:  $IDENTIFY_THRESHOLD (current=$IDENTIFY_CURRENT_PERIOD)"
+log "  Inactive subtrees:   $NUM_SUBTREES"
+log "  Inactive file size:  $INACTIVE_SIZE bytes"
+log "  Test directory:      $TEST_DIR"
 
 if [ "$KEEP" = true ]; then
   log "  (Keeping test directory per --keep flag)"
