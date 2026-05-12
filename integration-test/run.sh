@@ -266,7 +266,7 @@ start_geth() {
     --nodiscover --maxpeers 0 \
     --rpc.allow-unprotected-txs --rpc.txfeecap 0 \
     --verbosity 3 \
-    --override.verkle=0 \
+    --override.ubt=0 \
     > "$log_file" 2>&1 &
   GETH_PID=$!
   disown "$GETH_PID" 2>/dev/null || true
