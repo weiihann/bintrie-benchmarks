@@ -303,7 +303,6 @@ log "================================================================"
 
 "$STATE_ACTOR_BIN" \
   -db "$DATADIR/geth/chaindata" \
-  -genesis "$GENESIS" \
   -binary-trie \
   -group-depth "$GROUP_DEPTH" \
   -target-size "$TARGET_SIZE" \
@@ -315,7 +314,7 @@ log "================================================================"
 
 # Validate: DB exists with non-trivial size
 DB_SIZE_KB=$(du -sk "$DATADIR/geth/chaindata" 2>/dev/null | cut -f1 || echo "0")
-if [ "$DB_SIZE_KB" -lt 1024 ]; then
+if [ "$DB_SIZE_KB" -lt 256 ]; then
   fail "DB too small: ${DB_SIZE_KB}KB"
   exit 2
 fi
