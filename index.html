@@ -128,6 +128,22 @@
         <span>330 runs</span>
       </div>
     </a>
+
+    <a class="card" href="ubt-vs-pbt/index.html">
+      <div class="card-title">UBT vs PBT</div>
+      <div class="card-summary">
+        Two binary trie variants at the same group depth: UBT (bitarray path encoding, single-pass commit) vs PBT (zone-partitioned key derivation across basic-data, code-chunk, storage-slot zones, with parallel per-zone commit).
+        Three ERC20 benchmarks with 10 cold-cache runs each on ~50&nbsp;GB databases (Intel Xeon 8358, 8&nbsp;cores, 31&nbsp;GB&nbsp;RAM).
+      </div>
+      <div class="card-result">
+        Result: PBT wins every benchmark &mdash; +11.0% on reads, +20.6% on writes, +17.5% on mixed. Gains come from shorter per-zone paths and parallel hashing across zone subtries.
+      </div>
+      <div class="card-meta">
+        <span>2 variants</span>
+        <span>3 benchmark types</span>
+        <span>30 runs</span>
+      </div>
+    </a>
   </div>
 </body>
 </html>
