@@ -103,10 +103,10 @@ drop_caches() {
   fi
   case "$(uname -s)" in
     Linux)
-      if sudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null; then
+      if sudo -n /usr/sbin/sysctl -w vm.drop_caches=3 >/dev/null 2>&1; then
         log "  [cache] OS page cache dropped"
       else
-        log "  [cache] ERROR: sudo drop_caches failed — run 'sudo -v' first"
+        log "  [cache] ERROR: sudo drop_caches failed — check NOPASSWD sudoers rule for sysctl"
         exit 1
       fi ;;
     *)
@@ -217,8 +217,10 @@ for spec in "${CONFIGS[@]}"; do
 done
 
 if [ "$COLD_CACHE" = "1" ] && [ "$(uname -s)" = "Linux" ]; then
-  if ! sudo -n true 2>/dev/null; then
-    log "ERROR: COLD_CACHE=1 needs sudo. Run 'sudo -v' before starting."
+  # Test the exact command drop_caches() runs, not a proxy — a narrow
+  # NOPASSWD rule for sysctl won't satisfy `sudo -n true`.
+  if ! sudo -n /usr/sbin/sysctl -w vm.drop_caches=3 >/dev/null 2>&1; then
+    log "ERROR: COLD_CACHE=1 needs passwordless sudo for: /usr/sbin/sysctl -w vm.drop_caches=3"
     ALL_OK=false
   fi
 fi
