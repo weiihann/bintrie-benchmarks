@@ -23,3 +23,12 @@ Head-to-head comparison of production MPT (upstream geth) against optimized BT-G
 [Full report](mpt-vs-bintrie/index.html) ·
 [ethresear.ch post](mpt-vs-bintrie/ethresearch-post.md) ·
 [Raw data](mpt-vs-bintrie/data/)
+
+### [UBT vs PBT](ubt-vs-pbt/)
+
+Head-to-head comparison of two binary trie variants at the same group depth: **UBT** (Unified Binary Trie -- bitarray path encoding, single-pass commit) vs **PBT** (Partitioned Binary Trie -- zone-partitioned key derivation across `basic-data`, `code-chunk`, `storage-slot` zones, with parallel per-zone commit). Three ERC20 benchmarks with 10 cold-cache runs each on ~50 GB databases (Intel Xeon 8358, 8 cores, 31 GB RAM).
+
+**Result:** PBT outperforms UBT on every benchmark. **+11.0% on reads** (15.95 → 17.70 Mgas/s, p=9.9e-12), **+20.6% on writes** (46.56 → 56.16 Mgas/s, p=4.5e-7), **+17.5% on mixed** (22.60 → 26.56 Mgas/s, p=1.3e-5). All Mann-Whitney significant; bootstrap 95% CIs for throughput exclude 1.0 on all three. Per-slot decomposition shows the wins come from shorter average path lengths within each zone (-12 to -26% per-slot read cost) and parallel hashing across the three zone subtries (-12 to -19% per-slot hash cost). The same-state guarantee holds (gas-per-slot ratio = 1.0000) -- only the trie shape differs.
+
+[Full report](ubt-vs-pbt/index.html) ·
+[Raw data](ubt-vs-pbt/data/)

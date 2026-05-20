@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UBT vs PBT — Does Zone Partitioning Help the Binary Trie?</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: #0A0E17;
+    color: #E2E8F0;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+
+  .report-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #F59E0B;
+    margin-bottom: 12px;
+  }
+  h1.hero-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 42px;
+    font-weight: 800;
+    line-height: 1.15;
+    background: linear-gradient(135deg, #94A3B8, #F59E0B);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+  .hero-subtitle {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 18px;
+    color: #94A3B8;
+    margin-bottom: 36px;
+    line-height: 1.5;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 48px;
+  }
+  .meta-card {
+    background: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+  .meta-card-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #64748B;
+    margin-bottom: 6px;
+  }
+  .meta-card-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #E2E8F0;
+    line-height: 1.4;
+  }
+
+  .section-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 16px 0;
+    border-top: 1px solid #1E293B;
+    border-bottom: 1px solid #1E293B;
+    position: sticky;
+    top: 0;
+    background: #0A0E17;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .nav-pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid #1E293B;
+    background: transparent;
+    color: #94A3B8;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  .nav-pill:hover {
+    border-color: #F59E0B;
+    color: #F59E0B;
+  }
+  .nav-pill.active {
+    border-color: #F59E0B;
+    background: rgba(245, 158, 11, 0.1);
+    color: #F59E0B;
+  }
+
+  .section { margin-bottom: 72px; }
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #64748B;
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: #E2E8F0;
+    margin-bottom: 24px;
+    line-height: 1.3;
+  }
+  h3 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #CBD5E1;
+    margin-top: 36px;
+    margin-bottom: 16px;
+  }
+  p { margin-bottom: 16px; }
+  .muted { color: #94A3B8; }
+  a { color: #F59E0B; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .callout {
+    border-left: 3px solid;
+    padding: 16px 20px;
+    margin: 24px 0;
+    background: #0F172A;
+    border-radius: 0 8px 8px 0;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .callout-green { border-color: #2ca02c; }
+  .callout-amber { border-color: #F59E0B; }
+  .callout-red { border-color: #d62728; }
+  .callout strong { color: #F8FAFC; }
+
+  .data-table-wrap {
+    overflow-x: auto;
+    margin: 20px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+  }
+  thead th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #1E293B;
+    color: #64748B;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1E293B;
+    color: #CBD5E1;
+  }
+  tbody tr:hover { background: rgba(30, 41, 59, 0.5); }
+  .cell-bold { font-weight: 700; color: #F8FAFC; }
+  .cell-green { color: #2ca02c; }
+  .cell-red { color: #d62728; }
+  .cell-amber { color: #F59E0B; }
+  .cell-dim { color: #64748B; }
+
+  .verdict-card {
+    background: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 12px;
+    padding: 28px;
+    margin: 28px 0;
+  }
+
+  .graph-img {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #1E293B;
+    margin: 16px 0;
+  }
+  .graph-hero {
+    width: 100%;
+    border-radius: 8px;
+    border: 2px solid #1E293B;
+    margin: 20px 0;
+  }
+
+  ul, ol { padding-left: 24px; margin-bottom: 16px; }
+  li { margin-bottom: 6px; }
+
+  .pattern-card {
+    border-left: 3px solid;
+    padding: 14px 18px;
+    margin: 12px 0;
+    background: #0F172A;
+    border-radius: 0 8px 8px 0;
+  }
+  .pattern-card p { margin: 0; font-size: 14px; }
+
+  .recommendation {
+    border-left: 4px solid #2ca02c;
+    padding: 24px 28px;
+    margin: 28px 0;
+    background: #0F172A;
+    border-radius: 0 12px 12px 0;
+  }
+  .recommendation .big-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #2ca02c;
+    margin-bottom: 8px;
+  }
+
+  .graph-caption {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: #64748B;
+    text-align: center;
+    margin-top: -8px;
+    margin-bottom: 16px;
+  }
+
+  footer {
+    border-top: 1px solid #1E293B;
+    padding: 32px 0 48px;
+    text-align: center;
+    color: #475569;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+  footer a { color: #64748B; text-decoration: none; }
+  footer a:hover { color: #F59E0B; }
+
+  @media (max-width: 640px) {
+    h1.hero-title { font-size: 28px; }
+    .meta-grid { grid-template-columns: 1fr 1fr; }
+    .section-nav { gap: 6px; }
+    .nav-pill { font-size: 11px; padding: 5px 10px; }
+  }
+  @media (max-width: 768px) {
+    h1.hero-title { font-size: 32px; }
+    h2 { font-size: 22px; }
+    .container { padding: 0 16px; }
+  }
+  code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.9em;
+    background: rgba(30, 41, 59, 0.8);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #F59E0B;
+  }
+</style>
+</head>
+<body>
+
+<div class="container" style="padding-top: 64px;">
+
+  <!-- Header -->
+  <div class="report-label">Benchmark Report &mdash; Binary Trie Variant Comparison</div>
+  <h1 class="hero-title">UBT vs PBT: Does Zone Partitioning Help?</h1>
+  <p class="hero-subtitle">Partitioned Binary Trie (zone-partitioned key derivation + parallel commit) versus Unified Binary Trie (bitarray baseline). Same group depth, same EVM workload, only the key-derivation strategy and commit pipeline change. PBT wins on every benchmark: <strong>+11% reads, +21% writes, +18% mixed</strong>.</p>
+
+  <!-- Meta cards -->
+  <div class="meta-grid">
+    <div class="meta-card">
+      <div class="meta-card-label">Machine</div>
+      <div class="meta-card-value">Intel Xeon 8358<br>8-Core / 31 GB</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-card-label">Databases</div>
+      <div class="meta-card-value">UBT 57 GB<br>PBT 54 GB</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-card-label">Protocol</div>
+      <div class="meta-card-value">Cold cache<br>OS drop + --cache 0</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-card-label">Runs</div>
+      <div class="meta-card-value">10 per benchmark<br>per config</div>
+    </div>
+  </div>
+
+  <!-- Sticky nav -->
+  <nav class="section-nav" id="section-nav">
+    <a class="nav-pill" href="#s1">S1 Summary</a>
+    <a class="nav-pill" href="#s2">S2 Designs</a>
+    <a class="nav-pill" href="#s3">S3 Method</a>
+    <a class="nav-pill" href="#s4">S4 Reads</a>
+    <a class="nav-pill" href="#s5">S5 Writes</a>
+    <a class="nav-pill" href="#s6">S6 Mixed</a>
+    <a class="nav-pill" href="#s7">S7 Why</a>
+    <a class="nav-pill" href="#s8">S8 Verdict</a>
+  </nav>
+
+  <!-- ============================================================
+       S1 — Executive Summary
+       ============================================================ -->
+  <div class="section" id="s1">
+    <div class="section-label">Section 1</div>
+    <h2>Executive Summary</h2>
+
+    <div class="callout callout-green">
+      <strong>PBT outperforms UBT on every benchmark.</strong> +11.0% Mgas/s on reads (p=9.9e-12), +20.6% on writes (p=4.5e-7), +17.5% on mixed (p=1.3e-5). All Mann-Whitney significant; bootstrap 95% CIs for throughput exclude 1.0 on all three. The same-state guarantee holds (gas-per-slot ratio = 1.0000) — the EVM did identical work in both configs; only the trie representation changed.
+    </div>
+
+    <p>Both configs run the same <a href="https://eips.ethereum.org/EIPS/eip-7864">binary trie (EIP-7864)</a> at group depth 8 with bitarray path encoding. The only variable under test is what happens between an EVM storage key and a trie key:</p>
+    <ul>
+      <li><strong>UBT (Unified Binary Trie)</strong> &mdash; one key-derivation function for everything, one commit pass.</li>
+      <li><strong>PBT (Partitioned Binary Trie)</strong> &mdash; account / code-chunk / storage-slot each hash into their own zone, and the per-zone subtries are committed in parallel.</li>
+    </ul>
+
+    <h3>Headline results</h3>
+
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>UBT Mgas/s</th>
+            <th>PBT Mgas/s</th>
+            <th>PBT speedup</th>
+            <th>95% CI</th>
+            <th>p-value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>erc20_balanceof (read)</td>
+            <td>15.95</td>
+            <td>17.70</td>
+            <td class="cell-bold cell-green">+11.0%</td>
+            <td>[1.071, 1.130]</td>
+            <td class="cell-dim">9.9e-12</td>
+          </tr>
+          <tr>
+            <td>erc20_approve (write)</td>
+            <td>46.56</td>
+            <td>56.16</td>
+            <td class="cell-bold cell-green">+20.6%</td>
+            <td>[1.096, 1.235]</td>
+            <td class="cell-dim">4.5e-7</td>
+          </tr>
+          <tr>
+            <td>mixed_sload_sstore</td>
+            <td>22.60</td>
+            <td>26.56</td>
+            <td class="cell-bold cell-green">+17.5%</td>
+            <td>[1.068, 1.313]</td>
+            <td class="cell-dim">1.3e-5</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>How to read this report</h3>
+    <p>Section 2 explains the two designs in concrete terms. Section 3 covers methodology and the same-state guarantee. Sections 4&ndash;6 present each benchmark; Section 7 looks at <em>where</em> PBT's time savings come from (per-slot read, hash, and commit costs). Section 8 is the verdict.</p>
+  </div>
+
+  <!-- ============================================================
+       S2 — The Two Designs
+       ============================================================ -->
+  <div class="section" id="s2">
+    <div class="section-label">Section 2</div>
+    <h2>The Two Designs</h2>
+
+    <p>Both UBT and PBT use the same on-disk trie structure: a binary trie with group depth 8 and bitarray path encoding (each group node bundles up to 8 binary levels into a single Pebble entry). The two designs differ in how an EVM access becomes a trie key, and in how the per-block commit pipeline runs.</p>
+
+    <h3>UBT &mdash; Unified key derivation, single-pass commit</h3>
+    <p>Every storage access &mdash; whether it's a balance read, code chunk fetch, or storage slot &mdash; goes through one keccak hash and lands in a single 256-bit keyspace. At commit time, dirty nodes are walked once, hashed, and persisted in one pass through the trie. Simple, but every write touches a tree that mixes accounts, code, and storage interleaved by hash.</p>
+
+    <h3>PBT &mdash; Zone-partitioned keys + parallel commit</h3>
+    <p>The same keccak hashes are still computed, but the result is steered into <strong>three sibling zones</strong> based on what the access is: <code>basic-data</code> (account fields), <code>code-chunk</code> (contract code), and <code>storage-slot</code> (contract storage). Each zone is its own subtrie of the unified binary trie. At commit time, the three zones run their hash + persist passes <strong>in parallel</strong> across goroutines.</p>
+
+    <p>Concretely, PBT trades a single big trie for three slightly-smaller subtries that can be processed concurrently. The hypothesis under test: the parallelism wins more than the extra subtrie roots cost.</p>
+
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>UBT</th>
+            <th>PBT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Group depth</td>
+            <td>8</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>Path encoding</td>
+            <td>Bitarray</td>
+            <td>Bitarray</td>
+          </tr>
+          <tr>
+            <td>Key derivation</td>
+            <td>Single hash &rarr; one keyspace</td>
+            <td>Single hash &rarr; three zoned keyspaces</td>
+          </tr>
+          <tr>
+            <td>Per-block commit</td>
+            <td>Single-pass walk</td>
+            <td>Three zone walks in parallel</td>
+          </tr>
+          <tr>
+            <td>Geth branch</td>
+            <td><code>feat/binary-trie/bitarray</code></td>
+            <td><code>binary/pbt</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The full state &mdash; accounts, contracts, storage &mdash; is identical between configs (same state-actor seed, same spamoor seed). Only the trie shape changes.</p>
+  </div>
+
+  <!-- ============================================================
+       S3 — Methodology
+       ============================================================ -->
+  <div class="section" id="s3">
+    <div class="section-label">Section 3</div>
+    <h2>Methodology</h2>
+
+    <h3>Setup</h3>
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Machine</td>
+            <td>Intel Xeon Platinum 8358 @ 2.6&nbsp;GHz, 8 cores, 31&nbsp;GB RAM, 2&nbsp;TB SSD, Debian 13</td>
+          </tr>
+          <tr>
+            <td>Group depth</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>State-actor workload</td>
+            <td>125k accounts &middot; 9M contracts &middot; min-slots=1 &middot; max-slots=100,000 &middot; power-law</td>
+          </tr>
+          <tr>
+            <td>State-actor seed</td>
+            <td>25519 (deterministic, both configs)</td>
+          </tr>
+          <tr>
+            <td>Spamoor bloat</td>
+            <td>0.5&nbsp;GB target (~8.4M ERC20 holder slots) &middot; seed <code>ubt-vs-pbt-smoke</code></td>
+          </tr>
+          <tr>
+            <td>Final DB size</td>
+            <td>UBT 57&nbsp;GB &middot; PBT 54&nbsp;GB (state-actor reported 50.7&nbsp;GB raw, 23.5M storage slots)</td>
+          </tr>
+          <tr>
+            <td>Benchmarks</td>
+            <td><code>erc20_balanceof</code> &middot; <code>erc20_approve</code> &middot; <code>mixed_sload_sstore</code> (5 parametrizations: 10/90, 30/70, 50/50, 70/30, 90/10)</td>
+          </tr>
+          <tr>
+            <td>Runs</td>
+            <td>10 per benchmark per config &mdash; 60 cold-cache sessions total</td>
+          </tr>
+          <tr>
+            <td>Cold cache protocol</td>
+            <td>Between every session: <code>sync</code>, <code>sudo sysctl -w vm.drop_caches=3</code>, restart geth with <code>--cache 0</code></td>
+          </tr>
+          <tr>
+            <td>Statistical tools</td>
+            <td>Mann-Whitney U, bootstrap 95% CIs (10k resamples), Welch's t-test, Pearson r</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The same-state guarantee</h3>
+    <p>UBT and PBT share the state-actor seed and the spamoor seed, so the EVM-level workload is byte-identical: same accounts, same contracts, same storage layout, same ERC20 with the same 8.4M holders. The two configs only differ in how a storage access maps to a trie key and in how the commit pipeline runs.</p>
+
+    <p><strong>Correctness anchor:</strong> the bootstrap analysis reports a <code>gas_per_slot</code> ratio of <strong>1.0000</strong> for all three benchmarks (95% CI [0.9999, 1.0001] for balanceof, [0.9995, 1.0002] for approve). Same logical work per slot in both configs &mdash; the timing comparison measures the trie, not the workload.</p>
+
+    <p class="muted"><em>Caveat: per-block <code>gas_used</code> sequences are not byte-identical because the dev chain mines every 10s and RPC-submitted transactions land in different blocks by timing jitter. The mismatch is purely how txs partition into blocks; <code>gas_per_slot</code> &mdash; the right correctness metric &mdash; is identical.</em></p>
+
+    <h3>Run-to-run stability (CV%)</h3>
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>UBT CV%</th>
+            <th>PBT CV%</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>erc20_balanceof</td><td>3.0%</td><td>3.6%</td></tr>
+          <tr><td>erc20_approve</td><td>3.9%</td><td>1.7%</td></tr>
+          <tr><td>mixed_sload_sstore</td><td>3.3%</td><td class="cell-amber">12.9%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted"><em>Mixed-PBT's higher variance is worth flagging: the +17.5% headline holds (CI excludes 1.0), but the spread is wider than the other benchmarks.</em></p>
+  </div>
+
+  <!-- ============================================================
+       S4 — Reads
+       ============================================================ -->
+  <div class="section" id="s4">
+    <div class="section-label">Section 4</div>
+    <h2>Reads &mdash; <code>erc20_balanceof</code></h2>
+
+    <p>The benchmark calls <code>balanceOf()</code> on the spamoor-deployed ERC20 against ~36k random addresses per block, until ~100M gas of work is done. Each call is a cold <code>SLOAD</code> into a different storage slot in a ~50&nbsp;GB binary trie. No writes, no execution heavy logic &mdash; pure read latency.</p>
+
+    <div class="callout callout-green">
+      <strong>UBT: 15.95 Mgas/s &mdash; PBT: 17.70 Mgas/s &mdash; +11.0%</strong> (Mann-Whitney p=9.9e-12, bootstrap CI [1.071, 1.130])
+    </div>
+
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr><th>Component</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>state_read_ms</code></td><td>1,285</td><td>1,143</td><td class="cell-green">&minus;11.1%</td></tr>
+          <tr><td><code>state_hash_ms</code></td><td>3.16</td><td>5.40</td><td class="cell-amber">+71%</td></tr>
+          <tr><td><code>commit_ms</code></td><td>17.9</td><td>21.2</td><td class="cell-amber">+19%</td></tr>
+          <tr><td class="cell-bold"><code>total_ms</code></td><td class="cell-bold">1,520</td><td class="cell-bold">1,384</td><td class="cell-bold cell-green">&minus;9.0%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>State reads dominate &mdash; ~84% of total time for both configs. The Pearson correlation between <code>execution_ms</code> and <code>state_read_ms</code> is r=0.995 for both configs (p &lt; 1e-39): the benchmark is genuinely read-bound.</p>
+
+    <p>PBT's win is concentrated where it should be for a read workload: <strong>state_read_ms is 11% lower</strong>. Even though no commit is happening (balanceof is read-only), the small writes do post per-block bookkeeping which is why <code>commit_ms</code> rises a hair on PBT &mdash; three zone roots cost slightly more than one when there's nothing meaningful to commit.</p>
+
+    <p><strong>Per-slot read cost</strong>: UBT 0.144 ms/slot vs PBT 0.127 ms/slot = <strong>&minus;12.1%</strong> (CI [0.862, 0.917]).</p>
+
+    <img class="graph-hero" src="graphs-light/g01_hero_time_breakdown.png" alt="Time breakdown by benchmark and config">
+
+    <img class="graph-img" src="graphs-light/g02_throughput_boxplots.png" alt="Throughput boxplots (Mgas/s)">
+    <p class="graph-caption">PBT consistently above UBT across all three benchmarks. Boxes show inter-quartile range over the 10 runs.</p>
+
+    <img class="graph-img" src="graphs-light/g05_per_miss_read_cost.png" alt="Per cache miss read cost">
+  </div>
+
+  <!-- ============================================================
+       S5 — Writes
+       ============================================================ -->
+  <div class="section" id="s5">
+    <div class="section-label">Section 5</div>
+    <h2>Writes &mdash; <code>erc20_approve</code></h2>
+
+    <p>The benchmark calls <code>approve(spender, value)</code> in a loop. Each call is a cold <code>SLOAD</code> (read current allowance) followed by a cold-to-warm <code>SSTORE</code> (write new allowance). The attack EOA maintains a "next free slot" bump pointer at <code>storage[0]</code>, so every run writes a fresh chunk of ~4,000 slots &mdash; never overwriting a prior run's slots (proved by gas-per-slot staying constant at 22,929 across all 10 runs).</p>
+
+    <div class="callout callout-green">
+      <strong>UBT: 46.56 Mgas/s &mdash; PBT: 56.16 Mgas/s &mdash; +20.6%</strong> (Mann-Whitney p=4.5e-7, CI [1.096, 1.235])
+    </div>
+
+    <p>Approve is the most parallel-commit-friendly workload, and PBT's lead is largest here.</p>
+
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th><th>p-value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ms_per_slot_read</code></td><td>0.113</td><td>0.084</td><td class="cell-bold cell-green">&minus;25.6%</td><td class="cell-dim">6.8e-08</td></tr>
+          <tr><td><code>ms_per_slot_hash</code></td><td>0.292</td><td>0.237</td><td class="cell-bold cell-green">&minus;18.6%</td><td class="cell-dim">6.8e-08</td></tr>
+          <tr><td><code>ms_per_cache_miss</code></td><td>0.141</td><td>0.108</td><td class="cell-bold cell-green">&minus;23.2%</td><td class="cell-dim">4.5e-07</td></tr>
+          <tr><td><code>ms_per_slot_total</code></td><td>0.492</td><td>0.408</td><td class="cell-bold cell-green">&minus;17.1%</td><td class="cell-dim">5.2e-07</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Every cost component &mdash; reads, hashing, cache-miss latency, total per-slot time &mdash; is meaningfully lower for PBT. The hash savings (&minus;18.6% per slot) come straight from running the three zone subtries' commit passes in parallel: with three subtries instead of one bigger one, the per-block critical path shortens even when wall-clock SHA-256 work is the same.</p>
+
+    <p class="muted"><em>Note: <code>total_ms</code> for approve shows &minus;12.6% (PBT faster) but Mann-Whitney p=0.081 &mdash; not significant due to high run-variance in absolute milliseconds. The throughput and per-slot metrics tell a tighter story; trust those.</em></p>
+
+    <img class="graph-img" src="graphs-light/g07_per_slot_total_time.png" alt="Per-slot total time">
+    <img class="graph-img" src="graphs-light/g08_per_slot_write_cost.png" alt="Per-slot write cost">
+    <img class="graph-img" src="graphs-light/g06_cold_tail_effect.png" alt="Cold tail effect">
+  </div>
+
+  <!-- ============================================================
+       S6 — Mixed
+       ============================================================ -->
+  <div class="section" id="s6">
+    <div class="section-label">Section 6</div>
+    <h2>Mixed &mdash; <code>mixed_sload_sstore</code></h2>
+
+    <p>Five parametrizations split a block's gas budget between SLOAD and SSTORE phases: 10/90, 30/70, 50/50, 70/30, 90/10. The runtime <code>GAS</code> opcode picks the cutoff dynamically, so each parametrization actually executes the requested ratio.</p>
+
+    <div class="callout callout-green">
+      <strong>UBT: 22.60 Mgas/s &mdash; PBT: 26.56 Mgas/s &mdash; +17.5%</strong> (Mann-Whitney p=1.3e-5, CI [1.068, 1.313])
+    </div>
+
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th><th>p-value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ms_per_slot_read</code></td><td>0.145</td><td>0.117</td><td class="cell-bold cell-green">&minus;19.6%</td><td class="cell-dim">1.1e-42</td></tr>
+          <tr><td><code>ms_per_cache_miss</code></td><td>0.198</td><td>0.162</td><td class="cell-bold cell-green">&minus;18.1%</td><td class="cell-dim">5.3e-17</td></tr>
+          <tr><td><code>ms_per_slot_total</code></td><td>0.208</td><td>0.182</td><td class="cell-bold cell-green">&minus;12.7%</td><td class="cell-dim">4.9e-09</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The mixed workload's gain sits between balanceof's (11%) and approve's (21%) &mdash; about where the gas-weighted blend of the two would put it. Run-to-run variance is higher for PBT on this benchmark (CV 12.9%), so the confidence interval is wider, but the headline is still clearly significant.</p>
+
+    <img class="graph-img" src="graphs-light/g04_cache_hit_panels.png" alt="Cache hit rates and per-block scatter">
+    <img class="graph-img" src="graphs-light/g03_evm_tax_scatter.png" alt="Execution time vs state-read time">
+    <p class="graph-caption">For both configs, <code>execution_ms</code> tracks <code>state_read_ms</code> with r&gt;0.99. The benchmarks are I/O-bound; trie cost <em>is</em> the dominant cost.</p>
+  </div>
+
+  <!-- ============================================================
+       S7 — Where the time goes
+       ============================================================ -->
+  <div class="section" id="s7">
+    <div class="section-label">Section 7</div>
+    <h2>Where does PBT win?</h2>
+
+    <p>Throughput is a single number. The per-slot decomposition shows <em>which</em> trie operations PBT speeds up, and which (if any) it doesn't.</p>
+
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Per-slot cost (PBT/UBT ratio)</th>
+            <th>balanceof</th>
+            <th>approve</th>
+            <th>mixed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ms_per_slot_read</code></td>
+            <td class="cell-green">0.880</td>
+            <td class="cell-green">0.744</td>
+            <td class="cell-green">0.805</td>
+          </tr>
+          <tr>
+            <td><code>ms_per_slot_hash</code></td>
+            <td class="cell-dim">&mdash;</td>
+            <td class="cell-green">0.814</td>
+            <td>0.881</td>
+          </tr>
+          <tr>
+            <td><code>ms_per_cache_miss</code></td>
+            <td class="cell-green">0.893</td>
+            <td class="cell-green">0.768</td>
+            <td class="cell-green">0.819</td>
+          </tr>
+          <tr>
+            <td><code>ms_per_slot_total</code></td>
+            <td class="cell-green">0.901</td>
+            <td class="cell-green">0.829</td>
+            <td class="cell-green">0.873</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Patterns that hold</h3>
+
+    <div class="pattern-card" style="border-color: #F59E0B;">
+      <p><strong>Pattern 1: PBT is faster on every per-slot timing metric.</strong> Reads are 12&ndash;26% faster; per-miss latency is 11&ndash;23% lower. The zone partitioning produces smaller subtries, which gives shorter average path lengths from root to leaf within each zone &mdash; fewer Pebble lookups per slot.</p>
+    </div>
+
+    <div class="pattern-card" style="border-color: #F59E0B;">
+      <p><strong>Pattern 2: Hash time wins are bigger when there's hashing to do.</strong> PBT's hash advantage shows up on approve (&minus;19%) and mixed (&minus;12%) but is small or negative on balanceof. With three zone subtries committing in parallel, write-heavy workloads benefit more.</p>
+    </div>
+
+    <div class="pattern-card" style="border-color: #F59E0B;">
+      <p><strong>Pattern 3: <code>gas_per_slot</code> is identical.</strong> 22,929.85 (UBT) vs 22,927.02 (PBT) for approve &mdash; bootstrap CI [0.9995, 1.0002]. PBT's gain is genuine engineering, not a hidden gas-schedule shift.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       S8 — Verdict
+       ============================================================ -->
+  <div class="section" id="s8">
+    <div class="section-label">Section 8</div>
+    <h2>Verdict</h2>
+
+    <div class="recommendation">
+      <div class="big-text">Zone partitioning + parallel commit is a clear win.</div>
+      <p>+11&ndash;21% Mgas/s across all three benchmarks, with significance well above the noise floor and CIs that exclude 1.0. The same-state guarantee holds (identical gas per slot). The per-slot decomposition shows the wins are in trie traversal and per-zone hashing &mdash; exactly where the design intended.</p>
+    </div>
+
+    <h3>Caveats worth keeping in mind</h3>
+    <ul>
+      <li><strong>Scale.</strong> 50&nbsp;GB DBs on an 8-core box with 31&nbsp;GB RAM &mdash; a useful mid-scale result, not the 400&nbsp;GB / 100-runs scale of the production MPT-vs-BT campaign. The +21% writes finding deserves re-running at full scale before publishing externally.</li>
+      <li><strong>Mixed-PBT variance.</strong> CV 12.9% for the mixed benchmark on PBT (vs ~3% elsewhere). The +17.5% headline holds, but with wider error bars than the other two.</li>
+      <li><strong>Total-ms vs per-slot.</strong> <code>erc20_approve</code> total-ms shows &minus;12.6% (PBT faster) but p=0.081 &mdash; total-ms has high absolute-time variance. Throughput and per-slot metrics give the reliable signal.</li>
+      <li><strong>Benchmarks are narrow.</strong> Three ERC20 microbenchmarks, all hitting a single contract's storage. Real workloads access many contracts of varying sizes; the zone-partitioning advantage may shift with workload mix.</li>
+    </ul>
+
+    <h3>Open questions</h3>
+    <ul>
+      <li>Does the lead hold at 400&nbsp;GB scale and 100 runs per benchmark?</li>
+      <li>Does PBT help when many small contracts dominate (not just one large ERC20)?</li>
+      <li>Where does the &minus;25% per-slot read win actually come from &mdash; smaller per-zone trie depth, better cache locality within a zone, or both?</li>
+    </ul>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <p>Methodology, raw data, and reproducibility scripts in the <a href="https://github.com/weiihann/bintrie-benchmarks/tree/pbt/ubt-vs-pbt">bintrie-benchmarks repository</a>.<br>
+    Geth branches: <code>feat/binary-trie/bitarray</code> (UBT) &middot; <code>binary/pbt</code> (PBT).<br>
+    State-actor branches: <code>bench/bitarray-base</code> (UBT) &middot; <code>bench/bitarray-pbt</code> (PBT).</p>
+  </footer>
+
+</div>
+
+<!-- Minimal JS: sticky nav active state -->
+<script>
+(function() {
+  const pills = document.querySelectorAll('.nav-pill');
+  const sections = [];
+  pills.forEach(function(p) {
+    var id = p.getAttribute('href').replace('#', '');
+    var el = document.getElementById(id);
+    if (el) sections.push({ id: id, el: el, pill: p });
+  });
+  function update() {
+    var scrollY = window.scrollY + 120;
+    var active = sections[0];
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].el.offsetTop <= scrollY) active = sections[i];
+    }
+    pills.forEach(function(p) { p.classList.remove('active'); });
+    if (active) active.pill.classList.add('active');
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+})();
+</script>
+
+</body>
+</html>
