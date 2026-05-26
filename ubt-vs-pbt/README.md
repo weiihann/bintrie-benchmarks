@@ -37,22 +37,47 @@ ubt-vs-pbt/
 
 ## Branches
 
-| Config | geth branch | state-actor branch |
-|---|---|---|
-| `ubt` | `feat/binary-trie/bitarray` | `bench/bitarray-base` |
-| `pbt` | `binary/pbt` | `bench/bitarray-pbt` |
+Use the **flat-state** branches — they wire up the binary-trie-native flat state
+(`'F'`-prefix reader + write-on-commit), so state reads are served from a blob
+fetch instead of a full trie traversal. That is what makes `state_read_ms`
+benchmark-realistic.
 
-Build both pairs and stash the binaries before running the campaign:
+| Config | geth branch (worktree) | state-actor branch (worktree) |
+|---|---|---|
+| `ubt` | `feat/binary-trie/flat-state` (`go-ethereum-flat-state`) | `bench/flat-state-base` (`state-actor-flat-state`) |
+| `pbt` | `binary/pbt-flat-state` (`go-ethereum-pbt-flat-state`) | `bench/flat-state-pbt` (`state-actor-pbt-flat-state`) |
+
+Build both pairs and stash the binaries before running the campaign (each branch
+lives in its own worktree, so no checkout-switching is needed):
 
 ```bash
-# In go-ethereum:
-git checkout feat/binary-trie/bitarray && make geth && cp build/bin/geth /tmp/bench-bins/geth-ubt
-git checkout binary/pbt && make geth && cp build/bin/geth /tmp/bench-bins/geth-pbt
+# geth:
+make -C /Users/han/Documents/Codes/go-ethereum-flat-state geth \
+  && cp /Users/han/Documents/Codes/go-ethereum-flat-state/build/bin/geth /tmp/bench-bins/geth-flat-state
+make -C /Users/han/Documents/Codes/go-ethereum-pbt-flat-state geth \
+  && cp /Users/han/Documents/Codes/go-ethereum-pbt-flat-state/build/bin/geth /tmp/bench-bins/geth-pbt-flat-state
 
-# In state-actor:
-git checkout bench/bitarray-base && go build -o state-actor . && cp state-actor /tmp/bench-bins/state-actor-ubt
-git checkout bench/bitarray-pbt && go build -o state-actor . && cp state-actor /tmp/bench-bins/state-actor-pbt
+# state-actor:
+(cd /Users/han/Documents/Codes/state-actor-flat-state && go build -o state-actor . \
+  && cp state-actor /tmp/bench-bins/state-actor-flat-state)
+(cd /Users/han/Documents/Codes/state-actor-pbt-flat-state && go build -o state-actor . \
+  && cp state-actor /tmp/bench-bins/state-actor-pbt-flat-state)
 ```
+
+Then point the campaign at them (these are not the script defaults):
+
+```bash
+GETH_UBT_BIN=/tmp/bench-bins/geth-flat-state \
+GETH_PBT_BIN=/tmp/bench-bins/geth-pbt-flat-state \
+STATE_ACTOR_UBT_BIN=/tmp/bench-bins/state-actor-flat-state \
+STATE_ACTOR_PBT_BIN=/tmp/bench-bins/state-actor-pbt-flat-state \
+bash scripts/run_campaign.sh
+```
+
+For the **pre-flat-state baseline** (every read traverses the trie — the "before"
+numbers), build from the parent branches instead: geth `feat/binary-trie/bitarray`
++ state-actor `bench/bitarray-base` (`ubt`), and geth `binary/pbt` + state-actor
+`bench/bitarray-pbt` (`pbt`).
 
 ## Running the smoke test
 
