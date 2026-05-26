@@ -33,7 +33,9 @@ export UV="${UV:-$(command -v uv 2>/dev/null || echo /Users/han/.local/bin/uv)}"
 export NUM_RUNS="${NUM_RUNS:-1}"
 export TARGET_SIZE="${TARGET_SIZE:-1GB}"
 export SPAMOOR_TARGET_GB="${SPAMOOR_TARGET_GB:-0.1}"
-export GROUP_DEPTH="${GROUP_DEPTH:-8}"
+export NUM_CONTRACTS="${NUM_CONTRACTS:-10}"
+export CONTRACT_ORDER_SEED="${CONTRACT_ORDER_SEED:-ubt-vs-pbt-contract-order}"
+export GROUP_DEPTH="${GROUP_DEPTH:-5}"
 export COLD_CACHE="${COLD_CACHE:-0}"
 export BENCHMARKS="${BENCHMARKS:-erc20_balanceof erc20_approve mixed_sload_sstore}"
 export RESULTS_DIR
@@ -60,7 +62,9 @@ UBT vs PBT end-to-end campaign. All knobs via env vars (see README.md):
 
   NUM_RUNS         (default $NUM_RUNS)        runs per benchmark per config
   TARGET_SIZE      (default $TARGET_SIZE)     state-actor DB target size
-  SPAMOOR_TARGET_GB (default $SPAMOOR_TARGET_GB) ERC20 bloat target
+  SPAMOOR_TARGET_GB (default $SPAMOOR_TARGET_GB) ERC20 bloat target (split across contracts)
+  NUM_CONTRACTS    (default $NUM_CONTRACTS)        ERC20 contracts to deploy + benchmark
+  CONTRACT_ORDER_SEED (default $CONTRACT_ORDER_SEED) seed pinning the contract visit order
   GROUP_DEPTH      (default $GROUP_DEPTH)     bintrie group depth
   COLD_CACHE       (default $COLD_CACHE)      drop OS+pebble caches (Linux + sudo)
   BENCHMARKS       (default "$BENCHMARKS")

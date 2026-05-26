@@ -20,6 +20,7 @@ Produces:
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -31,12 +32,13 @@ BENCHMARKS = [
     "erc20_approve",
     "mixed_sload_sstore",
 ]
-NUM_RUNS = 10
 
-# CSV columns — config metadata prepended to block-level data
+# CSV columns — config metadata prepended to block-level data.
+# "contract" is the contract index for multi-contract runs (ubt-vs-pbt); it is
+# empty for single-contract logs (group-depth-benchmarks naming).
 BLOCK_COLUMNS = [
     "config", "trie_type", "group_depth", "pebble_block_size_kb",
-    "benchmark", "run", "block_number", "gas_used", "tx_count",
+    "benchmark", "run", "contract", "block_number", "gas_used", "tx_count",
     "execution_ms", "state_read_ms", "state_hash_ms", "commit_ms", "total_ms",
     "mgas_per_sec",
     "accounts_read", "storage_slots_read", "code_read", "code_bytes_read",
@@ -50,7 +52,7 @@ BLOCK_COLUMNS = [
 
 CACHE_COLUMNS = [
     "config", "trie_type", "group_depth", "pebble_block_size_kb",
-    "benchmark", "run",
+    "benchmark", "run", "contract",
     "num_blocks", "total_gas",
     "total_acct_hits", "total_acct_misses", "acct_cache_rate",
     "total_slot_hits", "total_slot_misses", "slot_cache_rate",
@@ -83,7 +85,7 @@ def parse_geth_log(filepath):
     return blocks
 
 
-def block_to_row(config_meta, benchmark, run, data):
+def block_to_row(config_meta, benchmark, run, data, contract=""):
     """Convert a parsed Slow block JSON to a CSV row dict."""
     b = data["block"]
     t = data["timing"]
@@ -94,6 +96,7 @@ def block_to_row(config_meta, benchmark, run, data):
         **config_meta,
         "benchmark": benchmark,
         "run": run,
+        "contract": contract,
         "block_number": b["number"],
         "gas_used": b["gas_used"],
         "tx_count": b["tx_count"],
@@ -128,7 +131,7 @@ def block_to_row(config_meta, benchmark, run, data):
     return row
 
 
-def compute_cache_summary(config_meta, benchmark, run, blocks):
+def compute_cache_summary(config_meta, benchmark, run, blocks, contract=""):
     """Compute aggregate cache metrics for a run (blocks with gas > 500K)."""
     big_blocks = [b for b in blocks if b["block"]["gas_used"] > 500000]
     if not big_blocks:
@@ -146,6 +149,7 @@ def compute_cache_summary(config_meta, benchmark, run, blocks):
         **config_meta,
         "benchmark": benchmark,
         "run": run,
+        "contract": contract,
         "num_blocks": n,
         "total_gas": sum(b["block"]["gas_used"] for b in big_blocks),
         "total_acct_hits": total_acct_h,
@@ -214,22 +218,35 @@ def extract_config(args):
         block_rows = []
         print(f"\n--- {bench} ---")
 
-        for run in range(1, NUM_RUNS + 1):
-            geth_log = results_dir / f"{bench}_run{run}_geth.log"
-            if not geth_log.exists():
-                print(f"  Run {run}: MISSING {geth_log.name}")
-                continue
+        # Match both single-contract logs ({bench}_run{run}_geth.log) and
+        # multi-contract logs ({bench}_run{run}_c{idx}_geth.log).
+        pattern = re.compile(
+            rf"^{re.escape(bench)}_run(\d+)(?:_c(\d+))?_geth\.log$"
+        )
+        logs = sorted(
+            p for p in results_dir.glob(f"{bench}_run*_geth.log")
+            if pattern.match(p.name)
+        )
+        if not logs:
+            print(f"  No logs for {bench}")
+        for geth_log in logs:
+            m = pattern.match(geth_log.name)
+            run = int(m.group(1))
+            contract = m.group(2) if m.group(2) is not None else ""
 
             blocks = parse_geth_log(geth_log)
+            label = f"run {run}" + (f" c{contract}" if contract != "" else "")
             print(
-                f"  Run {run}: {len(blocks)} total blocks, "
+                f"  {label}: {len(blocks)} total blocks, "
                 f"{sum(1 for b in blocks if b['block']['gas_used'] > 500000)} benchmark blocks"
             )
 
             for b in blocks:
-                block_rows.append(block_to_row(config_meta, bench, run, b))
+                block_rows.append(block_to_row(config_meta, bench, run, b, contract))
 
-            cache_summary = compute_cache_summary(config_meta, bench, run, blocks)
+            cache_summary = compute_cache_summary(
+                config_meta, bench, run, blocks, contract
+            )
             if cache_summary:
                 cache_rows.append(cache_summary)
 

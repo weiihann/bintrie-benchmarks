@@ -254,7 +254,7 @@ start_geth() {
   log "  [geth] Starting (gd=$GROUP_DEPTH, cache=$cache)..."
   "$GETH_BIN" \
     --datadir "$DATADIR" \
-    --dev --dev.period 3 --dev.gaslimit 100000000 \
+    --dev --dev.period 1 --dev.gaslimit 100000000 \
     --miner.etherbase "$SEED_ACCOUNT" \
     --cache "$cache" \
     --debug.logslowblock=0 \

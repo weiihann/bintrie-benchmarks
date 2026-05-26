@@ -24,8 +24,12 @@ RESULTS_DIR="${RESULTS_DIR:-$CAMPAIGN_DIR/data}"
 DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
 
 NUM_RUNS="${NUM_RUNS:-1}"
-GROUP_DEPTH="${GROUP_DEPTH:-8}"
+GROUP_DEPTH="${GROUP_DEPTH:-5}"
 COLD_CACHE="${COLD_CACHE:-0}"
+# Fixed seed for the contract-visit order. The permutation is a pure function of
+# this seed + the contract count, so it is identical across configs, benchmarks,
+# and runs — the apples-to-apples guarantee for the UBT-vs-PBT comparison.
+CONTRACT_ORDER_SEED="${CONTRACT_ORDER_SEED:-ubt-vs-pbt-contract-order}"
 
 SEED_ACCOUNT="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 SEED_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -137,10 +141,10 @@ start_geth_for_bench() {
     cache_flag=(--cache 4096)
   fi
 
-  log "  [geth] Starting ($config_id, gd=$GROUP_DEPTH, cold=$COLD_CACHE, dev.period=10)"
+  log "  [geth] Starting ($config_id, gd=$GROUP_DEPTH, cold=$COLD_CACHE, dev.period=1)"
   "$geth_bin" \
     --datadir "$datadir" \
-    --dev --dev.period 10 --dev.gaslimit 110000000 \
+    --dev --dev.period 1 --dev.gaslimit 110000000 \
     --miner.etherbase "$SEED_ACCOUNT" \
     "${cache_flag[@]}" \
     --debug.logslowblock=0 \
@@ -183,8 +187,8 @@ start_geth_for_bench() {
 # =============================================================================
 log "╔══════════════════════════════════════════════════════════════════╗"
 log "║  run_benchmarks.sh"
-log "║  ${#BENCH_NAMES[@]} benchmarks × $NUM_RUNS runs × ${#CONFIGS[@]} configs = $((${#BENCH_NAMES[@]} * NUM_RUNS * ${#CONFIGS[@]})) runs"
-log "║  COLD_CACHE=$COLD_CACHE  GROUP_DEPTH=$GROUP_DEPTH"
+log "║  ${#BENCH_NAMES[@]} benchmarks × $NUM_RUNS runs × ${#CONFIGS[@]} configs × N contracts (seeded order)"
+log "║  COLD_CACHE=$COLD_CACHE  GROUP_DEPTH=$GROUP_DEPTH  ORDER_SEED=$CONTRACT_ORDER_SEED"
 log "╚══════════════════════════════════════════════════════════════════╝"
 
 if [ ! -x "$UV" ]; then
@@ -200,7 +204,7 @@ ALL_OK=true
 for spec in "${CONFIGS[@]}"; do
   IFS='|' read -r name geth_bin <<< "$spec"
   db_path="$DB_BASE/$name"
-  stubs="$RESULTS_DIR/$name/stubs.json"
+  contracts="$RESULTS_DIR/$name/contracts.json"
   if [ ! -x "$geth_bin" ]; then
     log "  FAIL: geth binary missing: $geth_bin (config=$name)"
     ALL_OK=false
@@ -209,8 +213,8 @@ for spec in "${CONFIGS[@]}"; do
     log "  FAIL: DB missing: $db_path/geth/chaindata (config=$name) — run generate_dbs.sh first"
     ALL_OK=false
   fi
-  if [ ! -f "$stubs" ]; then
-    log "  FAIL: stubs.json missing: $stubs (config=$name) — run generate_dbs.sh first"
+  if [ ! -f "$contracts" ]; then
+    log "  FAIL: contracts.json missing: $contracts (config=$name) — run generate_dbs.sh first"
     ALL_OK=false
   fi
   log "  $name: ok"
@@ -237,25 +241,48 @@ fi
 # =============================================================================
 # Run benchmark suite per config
 # =============================================================================
+STUBS_FILE="$EXEC_SPECS/tests/benchmark/stateful/bloatnet/stubs_bloatnet.json"
+
+# write_stub_file <addr>: point all three benchmark labels at one contract.
+write_stub_file() {
+  local addr="$1"
+  cat > "$STUBS_FILE" <<EOF
+{
+  "test_sload_empty_erc20_balanceof_SMALL": {"addr": "$addr"},
+  "test_sstore_erc20_approve_SMALL": {"addr": "$addr"},
+  "test_mixed_sload_sstore_SMALL": {"addr": "$addr"}
+}
+EOF
+}
+
 for spec in "${CONFIGS[@]}"; do
   IFS='|' read -r name geth_bin <<< "$spec"
   db_path="$DB_BASE/$name"
   cfg_dir="$RESULTS_DIR/$name"
-  stubs="$cfg_dir/stubs.json"
+  contracts_file="$cfg_dir/contracts.json"
 
   log ""
   log "╔══════════════════════════════════════════════════════════════════╗"
   log "║  CONFIG: $name"
   log "╚══════════════════════════════════════════════════════════════════╝"
 
-  # Copy stubs to execution-specs so the benchmark tests pick them up
-  cp "$stubs" "$EXEC_SPECS/tests/benchmark/stateful/bloatnet/stubs_bloatnet.json"
+  # Load the contract addresses and compute the visit order. The permutation
+  # depends only on CONTRACT_ORDER_SEED + the contract count, so it is identical
+  # across configs, benchmarks, and runs. (read loop, not mapfile — macOS ships
+  # bash 3.2 where mapfile is absent.)
+  CONTRACTS=()
+  while IFS= read -r _addr; do CONTRACTS+=("$_addr"); done < <(
+    python3 -c "import json,sys; [print(a) for a in json.load(open(sys.argv[1]))]" "$contracts_file")
+  ORDER=()
+  while IFS= read -r _idx; do ORDER+=("$_idx"); done < <(
+    python3 -c "import random,sys; n=int(sys.argv[1]); random.seed(sys.argv[2]); l=list(range(n)); random.shuffle(l); print('\n'.join(map(str,l)))" "${#CONTRACTS[@]}" "$CONTRACT_ORDER_SEED")
+  log "  ${#CONTRACTS[@]} contracts, visit order: ${ORDER[*]}"
 
   # Clear old per-run logs for idempotency
   for bench_name in "${BENCH_NAMES[@]}"; do
     for run in $(seq 1 "$NUM_RUNS"); do
-      rm -f "$cfg_dir/${bench_name}_run${run}_geth.log"
-      rm -f "$cfg_dir/${bench_name}_run${run}_test.log"
+      rm -f "$cfg_dir/${bench_name}_run${run}_c"*_geth.log
+      rm -f "$cfg_dir/${bench_name}_run${run}_c"*_test.log
     done
   done
   rm -rf "$cfg_dir/csv"
@@ -268,34 +295,38 @@ for spec in "${CONFIGS[@]}"; do
     log "  ── BENCHMARK: $bench_name"
 
     for run in $(seq 1 "$NUM_RUNS"); do
-      log ""
-      log "  --- $bench_name run $run/$NUM_RUNS ($name) ---"
+      for idx in "${ORDER[@]}"; do
+        caddr="${CONTRACTS[$idx]}"
+        log ""
+        log "  --- $bench_name run $run/$NUM_RUNS contract $idx ($caddr) ($name) ---"
 
-      start_geth_for_bench "$geth_bin" "$db_path" "$name" "$cfg_dir/geth_current.log"
+        write_stub_file "$caddr"
+        start_geth_for_bench "$geth_bin" "$db_path" "$name" "$cfg_dir/geth_current.log"
 
-      log "  [bench] Running execute remote..."
-      cd "$EXEC_SPECS"
-      set +e
-      # NOTE: -m stateful was dropped because the bloatnet tests no longer
-      # carry that marker (PR #2430 removed it). The test path under
-      # tests/benchmark/stateful/bloatnet/ already scopes selection.
-      "$UV" run execute remote \
-        --fork Osaka \
-        --tx-wait-timeout 600 \
-        --gas-benchmark-values 100 \
-        --address-stubs "$EXEC_SPECS/tests/benchmark/stateful/bloatnet/stubs_bloatnet.json" \
-        "$bench_test" \
-        -v > "$cfg_dir/${bench_name}_run${run}_test.log" 2>&1
-      test_exit=$?
-      set -e
+        log "  [bench] Running execute remote..."
+        cd "$EXEC_SPECS"
+        set +e
+        # NOTE: -m stateful was dropped because the bloatnet tests no longer
+        # carry that marker (PR #2430 removed it). The test path under
+        # tests/benchmark/stateful/bloatnet/ already scopes selection.
+        "$UV" run execute remote \
+          --fork Osaka \
+          --tx-wait-timeout 600 \
+          --gas-benchmark-values 100 \
+          --address-stubs "$STUBS_FILE" \
+          "$bench_test" \
+          -v > "$cfg_dir/${bench_name}_run${run}_c${idx}_test.log" 2>&1
+        test_exit=$?
+        set -e
 
-      # Save geth log for extract_csv.py
-      cp "$cfg_dir/geth_current.log" "$cfg_dir/${bench_name}_run${run}_geth.log"
+        # Save geth log for extract_csv.py
+        cp "$cfg_dir/geth_current.log" "$cfg_dir/${bench_name}_run${run}_c${idx}_geth.log"
 
-      passed=$(grep -c " PASSED" "$cfg_dir/${bench_name}_run${run}_test.log" 2>/dev/null || echo "0")
-      failed=$(grep -c " FAILED" "$cfg_dir/${bench_name}_run${run}_test.log" 2>/dev/null || echo "0")
-      errors=$(grep -c "missing trie node" "$cfg_dir/${bench_name}_run${run}_geth.log" 2>/dev/null || echo "0")
-      log "  [bench] exit=$test_exit passed=$passed failed=$failed missing_trie_node=$errors"
+        passed=$(grep -c " PASSED" "$cfg_dir/${bench_name}_run${run}_c${idx}_test.log" 2>/dev/null || echo "0")
+        failed=$(grep -c " FAILED" "$cfg_dir/${bench_name}_run${run}_c${idx}_test.log" 2>/dev/null || echo "0")
+        errors=$(grep -c "missing trie node" "$cfg_dir/${bench_name}_run${run}_c${idx}_geth.log" 2>/dev/null || echo "0")
+        log "  [bench] exit=$test_exit passed=$passed failed=$failed missing_trie_node=$errors"
+      done
     done
   done
 

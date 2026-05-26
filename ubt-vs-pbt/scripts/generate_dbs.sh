@@ -26,10 +26,14 @@ DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
 
 # Workload knobs
 TARGET_SIZE="${TARGET_SIZE:-1GB}"
-GROUP_DEPTH="${GROUP_DEPTH:-8}"
+GROUP_DEPTH="${GROUP_DEPTH:-5}"
 STATE_ACTOR_SEED="${STATE_ACTOR_SEED:-25519}"
 SPAMOOR_SEED="${SPAMOOR_SEED:-ubt-vs-pbt-smoke}"
 SPAMOOR_TARGET_GB="${SPAMOOR_TARGET_GB:-0.1}"
+# Number of ERC20 contracts to deploy and bloat. The total SPAMOOR_TARGET_GB is
+# split evenly across them; each gets its own deterministic deployer seed
+# (${SPAMOOR_SEED}-cN), so the resulting addresses are identical across configs.
+NUM_CONTRACTS="${NUM_CONTRACTS:-10}"
 
 # state-actor direct scaling flags (opt-in; only passed when set).
 # Without these, state-actor falls back to its defaults (1000 accounts /
@@ -102,10 +106,10 @@ start_geth_for_deploy() {
   echo "" | "$geth_bin" --datadir "$datadir" account import --password /dev/stdin /tmp/seed_key.hex 2>/dev/null || true
   rm -f /tmp/seed_key.hex
 
-  log "  [geth] Starting for deployment (cache=4096, dev.period=3)"
+  log "  [geth] Starting for deployment (cache=4096, dev.period=1)"
   "$geth_bin" \
     --datadir "$datadir" \
-    --dev --dev.period 3 --dev.gaslimit 100000000 \
+    --dev --dev.period 1 --dev.gaslimit 100000000 \
     --miner.etherbase "$SEED_ACCOUNT" \
     --cache 4096 \
     --debug.logslowblock=0 \
@@ -175,19 +179,18 @@ for spec in "${CONFIGS[@]}"; do
   IFS='|' read -r name geth_bin sa_bin <<< "$spec"
   db_path="$DB_BASE/$name"
   config_results="$RESULTS_DIR/$name"
-  stubs_file="$config_results/stubs.json"
+  contracts_file="$config_results/contracts.json"
   gen_log="$config_results/state-actor.log"
   deploy_log="$config_results/geth_deploy.log"
-  spamoor_log="$config_results/spamoor.log"
 
   log ""
   log "╔══════════════════════════════════════════════════════════════╗"
   log "║  Config $name — DB generation + ERC20 deployment"
   log "╚══════════════════════════════════════════════════════════════╝"
 
-  # Skip if stubs already exist (resumable)
-  if [ -f "$stubs_file" ]; then
-    log "  $stubs_file already exists — skipping (delete to re-run)"
+  # Skip if contracts already captured (resumable)
+  if [ -f "$contracts_file" ]; then
+    log "  $contracts_file already exists — skipping (delete to re-run)"
     continue
   fi
 
@@ -239,47 +242,58 @@ for spec in "${CONFIGS[@]}"; do
     exit 1
   fi
 
-  log "  [phase2] spamoor erc20_bloater (target=${SPAMOOR_TARGET_GB}GB seed=$SPAMOOR_SEED)..."
-  "$SPAMOOR_BIN" erc20_bloater \
-    --rpchost="http://localhost:8545" \
-    --privkey="$PRIVKEY" \
-    --seed="$SPAMOOR_SEED" \
-    --target-gb="$SPAMOOR_TARGET_GB" \
-    --target-gas-ratio=0.8 \
-    --wallet-count=200 \
-    -v > "$spamoor_log" 2>&1
+  # Deploy + bloat NUM_CONTRACTS ERC20 contracts. Each spamoor invocation uses a
+  # distinct deployer seed (${SPAMOOR_SEED}-cN) → distinct deployer wallet →
+  # distinct contract, carrying SPAMOOR_TARGET_GB / NUM_CONTRACTS of the bloat.
+  # All run sequentially against this one running geth. The deployer address
+  # depends only on (privkey, seed), not the trie backend, so contract N lands
+  # at the same address under both configs.
+  per_contract_gb=$(python3 -c "print($SPAMOOR_TARGET_GB / $NUM_CONTRACTS)")
+  log "  [phase2] Deploying $NUM_CONTRACTS contract(s), ${per_contract_gb}GB each (total ${SPAMOOR_TARGET_GB}GB)"
+  declare -a contract_addrs=()
+  for c in $(seq 1 "$NUM_CONTRACTS"); do
+    c_seed="${SPAMOOR_SEED}-c${c}"
+    c_log="$config_results/spamoor_c${c}.log"
+    log "    [contract $c/$NUM_CONTRACTS] erc20_bloater (target=${per_contract_gb}GB seed=$c_seed)..."
+    "$SPAMOOR_BIN" erc20_bloater \
+      --rpchost="http://localhost:8545" \
+      --privkey="$PRIVKEY" \
+      --seed="$c_seed" \
+      --target-gb="$per_contract_gb" \
+      --target-gas-ratio=0.8 \
+      --wallet-count=200 \
+      -v > "$c_log" 2>&1
 
-  CONTRACT_ADDR=$(grep -oE 'contract: 0x[0-9a-fA-F]+' "$spamoor_log" | tail -1 | awk '{print $2}')
-  if [ -z "$CONTRACT_ADDR" ]; then
-    log "  ERROR: could not extract contract address from spamoor log"
-    tail -20 "$spamoor_log"
-    kill_geth
-    exit 1
-  fi
-  log "  [phase2] ERC20 deployed at: $CONTRACT_ADDR"
+    addr=$(grep -oE 'contract: 0x[0-9a-fA-F]+' "$c_log" | tail -1 | awk '{print $2}')
+    if [ -z "$addr" ]; then
+      log "    ERROR: could not extract contract address (contract $c)"
+      tail -20 "$c_log"
+      kill_geth
+      exit 1
+    fi
 
-  # Verify contract has code
-  CODE_LEN=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
-    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$CONTRACT_ADDR\",\"latest\"],\"id\":1}" \
-    | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
-  if [ "$CODE_LEN" -eq 0 ] 2>/dev/null; then
-    log "  ERROR: contract has no code"
-    kill_geth
-    exit 1
-  fi
-  log "  [phase2] Contract verified: ${CODE_LEN} bytes"
+    code_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
+      -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$addr\",\"latest\"],\"id\":1}" \
+      | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
+    if [ "$code_len" -eq 0 ] 2>/dev/null; then
+      log "    ERROR: contract $c ($addr) has no code"
+      kill_geth
+      exit 1
+    fi
+    log "    [contract $c/$NUM_CONTRACTS] deployed at $addr (${code_len} bytes)"
+    contract_addrs+=("$addr")
+  done
 
-  # Write stubs.json (used by execution-specs for the benchmark suite).
-  # Schema: {label: {"addr": "0x..."}} — current execution-specs AddressStubs
-  # model requires the object wrapper, not a bare hex string.
-  cat > "$stubs_file" << STUBS_EOF
-{
-  "test_sload_empty_erc20_balanceof_SMALL": {"addr": "$CONTRACT_ADDR"},
-  "test_sstore_erc20_approve_SMALL": {"addr": "$CONTRACT_ADDR"},
-  "test_mixed_sload_sstore_SMALL": {"addr": "$CONTRACT_ADDR"}
-}
-STUBS_EOF
-  log "  [phase2] stubs.json written: $stubs_file"
+  # Write contracts.json — a JSON array of the N deployed addresses. The
+  # benchmark phase selects among these in a fixed seeded order; the stub file
+  # execution-specs consumes is built per-contract at benchmark time.
+  python3 - "$contracts_file" "${contract_addrs[@]}" <<'PY'
+import json, sys
+out, addrs = sys.argv[1], sys.argv[2:]
+with open(out, "w") as f:
+    json.dump(addrs, f, indent=2)
+PY
+  log "  [phase2] contracts.json written: $contracts_file (${#contract_addrs[@]} contracts)"
 
   # Graceful geth shutdown to flush PathDB journal
   kill_geth
@@ -293,8 +307,18 @@ log "╚════════════════════════
 for spec in "${CONFIGS[@]}"; do
   IFS='|' read -r name _ _ <<< "$spec"
   db_path="$DB_BASE/$name"
-  stubs_file="$RESULTS_DIR/$name/stubs.json"
+  contracts_file="$RESULTS_DIR/$name/contracts.json"
   size=$(du -sh "$db_path/geth/chaindata" 2>/dev/null | cut -f1 || echo "N/A")
-  addr=$(python3 -c "import json; print(list(json.load(open('$stubs_file')).values())[0])" 2>/dev/null || echo "MISSING")
-  log "  $name: db=$size contract=$addr"
+  ncontracts=$(python3 -c "import json; print(len(json.load(open('$contracts_file'))))" 2>/dev/null || echo "?")
+  log "  $name: db=$size contracts=$ncontracts"
 done
+
+# Sanity: both configs must derive the identical contract address set, since
+# the benchmark replays the same seeded order against both.
+if [ -f "$RESULTS_DIR/ubt/contracts.json" ] && [ -f "$RESULTS_DIR/pbt/contracts.json" ]; then
+  if diff -q "$RESULTS_DIR/ubt/contracts.json" "$RESULTS_DIR/pbt/contracts.json" >/dev/null; then
+    log "  OK: ubt and pbt contracts.json are identical"
+  else
+    log "  WARN: ubt and pbt contracts.json DIFFER — comparison will not be apples-to-apples"
+  fi
+fi
