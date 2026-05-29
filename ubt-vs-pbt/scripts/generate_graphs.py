@@ -587,7 +587,6 @@ def g05_per_miss_read_cost(all_data: dict, theme: Theme,
     for bench in active_benches:
         by_cfg = filter_benchmark(all_data, bench)
         bench_center = pos + 0.5
-        medians_for_bench: dict[str, float] = {}
         for cfg in CONFIGS:
             if cfg not in by_cfg:
                 continue
@@ -595,21 +594,11 @@ def g05_per_miss_read_cost(all_data: dict, theme: Theme,
             data_list.append(vals)
             colors_list.append(COLORS[cfg])
             positions.append(pos)
-            medians_for_bench[cfg] = median_val(vals) if vals else 0.0
             pos += 1
         tick_positions.append(bench_center)
         tick_labels_list.append(BENCH_LABELS[bench])
-
-        # Annotate ratio
-        if len(medians_for_bench) == 2:
-            m_ubt = medians_for_bench.get("ubt", 0)
-            m_pbt = medians_for_bench.get("pbt", 0)
-            if m_ubt > 0 and m_pbt > 0:
-                ratio = m_pbt / m_ubt
-                ax.text(bench_center, ax.get_ylim()[1] if ax.get_ylim()[1] > 0
-                        else max(m_ubt, m_pbt) * 1.3,
-                        f"PBT/UBT: {ratio:.2f}x", ha="center", va="bottom",
-                        fontsize=7, color="#94A3B8", fontstyle="italic")
+        # Ratio labels are added after the boxplot is drawn (see below), so the
+        # y-position can use the real data extent rather than the default ylim.
         pos += 0.5
 
     if data_list:
