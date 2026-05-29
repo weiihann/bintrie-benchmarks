@@ -7,7 +7,7 @@ Performance comparison of Ethereum's binary trie under two key-derivation strate
 
 Both configs use the same group depth (default 5) and the same EVM-level workload. The only variable under test is the trie-side change.
 
-The workload spreads across multiple ERC20 contracts (default 10). The bloat phase deploys `NUM_CONTRACTS` contracts, splitting the target size evenly; the benchmark phase visits them in a fixed seeded random order (`CONTRACT_ORDER_SEED`) that is identical across configs, benchmarks, and runs — so UBT and PBT see the exact same contract-access sequence and only the trie shape differs.
+The workload spreads across multiple ERC20 contracts (default 10). The bloat phase deploys `NUM_CONTRACTS` contracts, splitting the target size evenly; the benchmark phase visits them on a **power-law weighted schedule** — each run performs `VISITS_PER_RUN` benchmark invocations distributed across the contracts by a Zipf (`1/rank^POWERLAW_EXP`) law, so a few "hot" contracts are visited many times and a long tail once (e.g. 30 visits → counts `[10,5,3,3,2,2,2,1,1,1]`). Which contract is hottest, and the interleaving (highest-averages placement, so the hot contract is spread evenly rather than fired back-to-back), are pure functions of `CONTRACT_ORDER_SEED` + the contract count — identical across configs, benchmarks, and runs, so UBT and PBT see the exact same contract-access sequence and only the trie shape differs.
 
 ## Status
 
@@ -87,7 +87,7 @@ From this directory:
 bash scripts/run_campaign.sh
 ```
 
-That's the default — `NUM_RUNS=1`, `TARGET_SIZE=1GB`, `NUM_CONTRACTS=10`, `COLD_CACHE=0` (hot cache, no `sudo` needed). Benchmark invocations scale with `NUM_CONTRACTS` (3 benchmarks × 2 configs × `NUM_RUNS` × `NUM_CONTRACTS`), so the smoke run is 60 invocations — budget a few hours on a laptop, or drop `NUM_CONTRACTS` for a faster sanity check.
+That's the default — `NUM_RUNS=1`, `TARGET_SIZE=1GB`, `NUM_CONTRACTS=10`, `VISITS_PER_RUN=30`, `COLD_CACHE=0` (hot cache, no `sudo` needed). Benchmark invocations are `3 benchmarks × 2 configs × NUM_RUNS × VISITS_PER_RUN`, so the smoke run is 180 invocations — budget a few hours on a laptop, or drop `VISITS_PER_RUN` for a faster sanity check.
 
 Output lands in `data/ubt/`, `data/pbt/`, `data/ubt_vs_pbt_consolidated.csv`, `data/analysis_results.json`.
 
@@ -101,7 +101,9 @@ All knobs are env vars with sensible defaults:
 | `TARGET_SIZE` | `1GB` | state-actor's DB target |
 | `SPAMOOR_TARGET_GB` | `0.1` | ERC20 bloat size, split evenly across contracts |
 | `NUM_CONTRACTS` | `10` | ERC20 contracts to deploy + benchmark |
-| `CONTRACT_ORDER_SEED` | `ubt-vs-pbt-contract-order` | seed pinning the contract visit order |
+| `VISITS_PER_RUN` | `30` | weighted benchmark invocations per run, spread across the contracts |
+| `POWERLAW_EXP` | `1.0` | Zipf exponent for the contract-visit weighting (higher = steeper) |
+| `CONTRACT_ORDER_SEED` | `ubt-vs-pbt-contract-order` | seed pinning the weighted visit schedule |
 | `GROUP_DEPTH` | `5` | bintrie group depth |
 | `COLD_CACHE` | `0` | drop OS + Pebble caches between runs (Linux + sudo only) |
 | `BENCHMARKS` | `"erc20_balanceof erc20_approve mixed_sload_sstore"` | space-separated override |
@@ -127,7 +129,7 @@ NUM_RUNS=10 TARGET_SIZE=400GB COLD_CACHE=1 bash scripts/run_campaign.sh
 Both configs see byte-identical EVM-level workload:
 - state-actor `-seed 25519` → identical logical accounts/contracts/slots.
 - spamoor `--seed=ubt-vs-pbt-smoke` with per-contract seeds `${SPAMOOR_SEED}-c<N>` → identical ERC20 deploys + bloat transactions. Each contract's address depends only on `(privkey, seed)`, not the trie backend, so `ubt/contracts.json` and `pbt/contracts.json` are identical (asserted at the end of `generate_dbs.sh`).
-- The benchmark visits contracts in a permutation derived purely from `CONTRACT_ORDER_SEED` + the contract count, so the access sequence is identical across configs, benchmarks, and runs.
+- The benchmark visits contracts on a weighted schedule derived purely from `CONTRACT_ORDER_SEED` + the contract count + `VISITS_PER_RUN` + `POWERLAW_EXP`, so the access sequence is identical across configs, benchmarks, and runs.
 
 PBT changes only **key derivation**, so on-disk stem distributions differ. The variable under test is the trie representation, not the workload.
 

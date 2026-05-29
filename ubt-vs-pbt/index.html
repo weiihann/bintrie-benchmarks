@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UBT vs PBT — Does Zone Partitioning Help the Binary Trie?</title>
+<title>UBT vs PBT — Zone Partitioning Meets Flat State</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -247,6 +247,20 @@
     margin-bottom: 16px;
   }
 
+  .codeblock {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    background: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 18px 0;
+    overflow-x: auto;
+    color: #CBD5E1;
+    line-height: 1.5;
+    white-space: pre;
+  }
+
   footer {
     border-top: 1px solid #1E293B;
     padding: 32px 0 48px;
@@ -284,9 +298,9 @@
 <div class="container" style="padding-top: 64px;">
 
   <!-- Header -->
-  <div class="report-label">Benchmark Report &mdash; Binary Trie Variant Comparison</div>
-  <h1 class="hero-title">UBT vs PBT: Does Zone Partitioning Help?</h1>
-  <p class="hero-subtitle">Partitioned Binary Trie (zone-partitioned key derivation + parallel commit) versus Unified Binary Trie (bitarray baseline). Same group depth, same EVM workload, only the key-derivation strategy and commit pipeline change. PBT wins on every benchmark: <strong>+11% reads, +21% writes, +18% mixed</strong>.</p>
+  <div class="report-label">Benchmark Report &mdash; Binary Trie Variant Comparison (Flat State)</div>
+  <h1 class="hero-title">UBT vs PBT: Zone Partitioning Meets Flat State</h1>
+  <p class="hero-subtitle">Partitioned Binary Trie (zone-partitioned key derivation + parallel commit) versus Unified Binary Trie (bitarray baseline), now that state reads are served from a <strong>flat-state snapshot</strong> instead of trie traversal. Same group depth, same EVM workload, same 75&nbsp;GB state &mdash; only the key-derivation strategy changes. PBT wins on every benchmark, and by a wider margin than before: <strong>1.75&times; reads, 2.83&times; writes, 2.41&times; mixed</strong>.</p>
 
   <!-- Meta cards -->
   <div class="meta-grid">
@@ -296,15 +310,15 @@
     </div>
     <div class="meta-card">
       <div class="meta-card-label">Databases</div>
-      <div class="meta-card-value">UBT 57 GB<br>PBT 54 GB</div>
+      <div class="meta-card-value">UBT 73 GB<br>PBT 71 GB</div>
     </div>
     <div class="meta-card">
       <div class="meta-card-label">Protocol</div>
       <div class="meta-card-value">Cold cache<br>OS drop + --cache 0</div>
     </div>
     <div class="meta-card">
-      <div class="meta-card-label">Runs</div>
-      <div class="meta-card-value">10 per benchmark<br>per config</div>
+      <div class="meta-card-label">Sampling</div>
+      <div class="meta-card-value">5 runs &times; 30<br>weighted visits</div>
     </div>
   </div>
 
@@ -328,13 +342,13 @@
     <h2>Executive Summary</h2>
 
     <div class="callout callout-green">
-      <strong>PBT outperforms UBT on every benchmark.</strong> +11.0% Mgas/s on reads (p=9.9e-12), +20.6% on writes (p=4.5e-7), +17.5% on mixed (p=1.3e-5). All Mann-Whitney significant; bootstrap 95% CIs for throughput exclude 1.0 on all three. The same-state guarantee holds (gas-per-slot ratio = 1.0000) — the EVM did identical work in both configs; only the trie representation changed.
+      <strong>PBT outperforms UBT on every benchmark, and the gap is large.</strong> 1.75&times; Mgas/s on reads (p=1.5e-147), 2.83&times; on writes (p=1.6e-128), 2.41&times; on mixed (p&approx;0). Every Mann-Whitney test is significant; bootstrap 95% CIs for throughput exclude 1.0 by a wide margin. The same-state guarantee holds (aggregate gas-per-slot ratio = 1.0000) &mdash; the EVM did identical work in both configs; only the trie key layout changed.
     </div>
 
-    <p>Both configs run the same <a href="https://eips.ethereum.org/EIPS/eip-7864">binary trie (EIP-7864)</a> at group depth 8 with bitarray path encoding. The only variable under test is what happens between an EVM storage key and a trie key:</p>
+    <p>Both configs run the same <a href="https://eips.ethereum.org/EIPS/eip-7864">binary trie (EIP-7864)</a> at group depth 5 with bitarray path encoding, and both now serve state reads from a <strong>flat-state snapshot</strong> (a <code>'F'</code>-prefixed key/value store mapping a 31-byte stem to its packed values) rather than walking the trie. The only variable under test is what happens between an EVM storage key and its on-disk key:</p>
     <ul>
-      <li><strong>UBT (Unified Binary Trie)</strong> &mdash; one key-derivation function for everything, one commit pass.</li>
-      <li><strong>PBT (Partitioned Binary Trie)</strong> &mdash; account / code-chunk / storage-slot each hash into their own zone, and the per-zone subtries are committed in parallel.</li>
+      <li><strong>UBT (Unified Binary Trie)</strong> &mdash; one key-derivation function for everything; a contract's storage slots are scattered across the whole keyspace by a full hash.</li>
+      <li><strong>PBT (Partitioned Binary Trie)</strong> &mdash; account / code-chunk / storage-slot each derive into their own <em>zone</em>, so a contract's storage slots share a key prefix and land <em>contiguously</em> on disk.</li>
     </ul>
 
     <h3>Headline results</h3>
@@ -354,34 +368,38 @@
         <tbody>
           <tr>
             <td>erc20_balanceof (read)</td>
-            <td>15.95</td>
-            <td>17.70</td>
-            <td class="cell-bold cell-green">+11.0%</td>
-            <td>[1.071, 1.130]</td>
-            <td class="cell-dim">9.9e-12</td>
+            <td>31.1</td>
+            <td>54.4</td>
+            <td class="cell-bold cell-green">1.75&times;</td>
+            <td>[1.728, 1.780]</td>
+            <td class="cell-dim">1.5e-147</td>
           </tr>
           <tr>
             <td>erc20_approve (write)</td>
-            <td>46.56</td>
-            <td>56.16</td>
-            <td class="cell-bold cell-green">+20.6%</td>
-            <td>[1.096, 1.235]</td>
-            <td class="cell-dim">4.5e-7</td>
+            <td>31.9</td>
+            <td>90.2</td>
+            <td class="cell-bold cell-green">2.83&times;</td>
+            <td>[2.775, 2.861]</td>
+            <td class="cell-dim">1.6e-128</td>
           </tr>
           <tr>
             <td>mixed_sload_sstore</td>
-            <td>22.60</td>
-            <td>26.56</td>
-            <td class="cell-bold cell-green">+17.5%</td>
-            <td>[1.068, 1.313]</td>
-            <td class="cell-dim">1.3e-5</td>
+            <td>28.8</td>
+            <td>69.3</td>
+            <td class="cell-bold cell-green">2.41&times;</td>
+            <td>[2.392, 2.419]</td>
+            <td class="cell-dim">&approx;0</td>
           </tr>
         </tbody>
       </table>
     </div>
 
+    <div class="callout callout-amber">
+      <strong>The result flips the original hypothesis.</strong> We expected flat-state to <em>shrink</em> PBT's read advantage: if reads no longer traverse the trie, PBT's shorter zone paths shouldn't matter. Instead the read lead <em>grew</em> &mdash; from +11% in the earlier trie-traversal study (group depth 8) to 1.75&times; here. Section 7 shows why: the same zone partitioning that shortened trie paths also clusters each contract's flat-state blobs on disk, so the advantage simply <em>migrated</em> from trie depth to disk locality.
+    </div>
+
     <h3>How to read this report</h3>
-    <p>Section 2 explains the two designs in concrete terms. Section 3 covers methodology and the same-state guarantee. Sections 4&ndash;6 present each benchmark; Section 7 looks at <em>where</em> PBT's time savings come from (per-slot read, hash, and commit costs). Section 8 is the verdict.</p>
+    <p>Section 2 explains the two designs and the flat-state read path. Section 3 covers methodology, the weighted workload, and the same-state guarantee. Sections 4&ndash;6 present each benchmark; Section 7 traces <em>where</em> the win comes from (down to the key-derivation source). Section 8 is the verdict and the caveats that matter.</p>
   </div>
 
   <!-- ============================================================
@@ -391,56 +409,37 @@
     <div class="section-label">Section 2</div>
     <h2>The Two Designs</h2>
 
-    <p>Both UBT and PBT use the same on-disk trie structure: a binary trie with group depth 8 and bitarray path encoding (each group node bundles up to 8 binary levels into a single Pebble entry). The two designs differ in how an EVM access becomes a trie key, and in how the per-block commit pipeline runs.</p>
+    <p>Both UBT and PBT use the same on-disk trie structure (binary trie, group depth 5, bitarray path encoding) and the same flat-state read path. A storage read first checks the flat-state snapshot &mdash; key <code>'F' || stem(31)</code>, value <code>bitmap(32) || packed values</code> &mdash; and only falls back to the trie on a miss. So for reads, <em>the trie shape is irrelevant</em>; what matters is where the flat-state blob for a given slot physically lands in Pebble. That is determined entirely by how the slot's stem is derived.</p>
 
-    <h3>UBT &mdash; Unified key derivation, single-pass commit</h3>
-    <p>Every storage access &mdash; whether it's a balance read, code chunk fetch, or storage slot &mdash; goes through one keccak hash and lands in a single 256-bit keyspace. At commit time, dirty nodes are walked once, hashed, and persisted in one pass through the trie. Simple, but every write touches a tree that mixes accounts, code, and storage interleaved by hash.</p>
+    <h3>UBT &mdash; Unified key derivation</h3>
+    <p>A storage slot's key is <code>sha256(0&times;12 || addr || (MAIN_STORAGE_OFFSET + slot))</code>. The slot number is hashed in, so two consecutive slots of the <em>same</em> contract produce keys that are essentially random with respect to each other. A contract's storage is therefore <strong>scattered uniformly</strong> across the 256-bit keyspace &mdash; and across the whole Pebble SSTable layout on disk.</p>
 
-    <h3>PBT &mdash; Zone-partitioned keys + parallel commit</h3>
-    <p>The same keccak hashes are still computed, but the result is steered into <strong>three sibling zones</strong> based on what the access is: <code>basic-data</code> (account fields), <code>code-chunk</code> (contract code), and <code>storage-slot</code> (contract storage). Each zone is its own subtrie of the unified binary trie. At commit time, the three zones run their hash + persist passes <strong>in parallel</strong> across goroutines.</p>
-
-    <p>Concretely, PBT trades a single big trie for three slightly-smaller subtries that can be processed concurrently. The hypothesis under test: the parallelism wins more than the extra subtrie roots cost.</p>
+    <h3>PBT &mdash; Zone-partitioned key derivation</h3>
+    <p>The slot key is built, not hashed whole. The top bits carry a <em>zone</em> tag and the top 60 bits of <code>H(addr)</code>; the slot's own hash fills the middle, the sub-index the bottom:</p>
+    <div class="codeblock">key bits (PBT storage zone):
+  [255]      zone = 1 (storage)
+  [254..195] top 60 bits of H(addr)        &larr; same for ALL slots of a contract
+  [194..8]   top 187 bits of H(addr||tree_index)
+  [7..0]     slot % 256</div>
+    <p>Because the high-order bits are identical for every storage slot of a given contract, all of that contract's slots sit <strong>contiguously</strong> in Pebble's sorted keyspace. The same mechanism puts account fields and code chunks in their own zones. (PBT also commits the three zone subtries in parallel, which helps the write path &mdash; but as Section 7 shows, the dominant effect here is the read-side locality.)</p>
 
     <div class="data-table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Property</th>
-            <th>UBT</th>
-            <th>PBT</th>
-          </tr>
+          <tr><th>Property</th><th>UBT</th><th>PBT</th></tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Group depth</td>
-            <td>8</td>
-            <td>8</td>
-          </tr>
-          <tr>
-            <td>Path encoding</td>
-            <td>Bitarray</td>
-            <td>Bitarray</td>
-          </tr>
-          <tr>
-            <td>Key derivation</td>
-            <td>Single hash &rarr; one keyspace</td>
-            <td>Single hash &rarr; three zoned keyspaces</td>
-          </tr>
-          <tr>
-            <td>Per-block commit</td>
-            <td>Single-pass walk</td>
-            <td>Three zone walks in parallel</td>
-          </tr>
-          <tr>
-            <td>Geth branch</td>
-            <td><code>feat/binary-trie/bitarray</code></td>
-            <td><code>binary/pbt</code></td>
-          </tr>
+          <tr><td>Group depth</td><td>5</td><td>5</td></tr>
+          <tr><td>Path encoding</td><td>Bitarray</td><td>Bitarray</td></tr>
+          <tr><td>Read path</td><td>Flat-state snapshot</td><td>Flat-state snapshot</td></tr>
+          <tr><td>Storage key</td><td>Full hash &rarr; scattered</td><td>Zone + H(addr) prefix &rarr; clustered</td></tr>
+          <tr><td>Per-block commit</td><td>Single-pass walk</td><td>Three zone walks in parallel</td></tr>
+          <tr><td>Geth branch</td><td><code>feat/binary-trie/flat-state</code></td><td><code>binary/pbt-flat-state</code></td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>The full state &mdash; accounts, contracts, storage &mdash; is identical between configs (same state-actor seed, same spamoor seed). Only the trie shape changes.</p>
+    <p>The full state &mdash; accounts, contracts, storage &mdash; is identical between configs (same state-actor seed, same spamoor seed). Only the key layout, and therefore the disk locality, changes.</p>
   </div>
 
   <!-- ============================================================
@@ -454,81 +453,48 @@
     <div class="data-table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Parameter</th>
-            <th>Value</th>
-          </tr>
+          <tr><th>Parameter</th><th>Value</th></tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Machine</td>
-            <td>Intel Xeon Platinum 8358 @ 2.6&nbsp;GHz, 8 cores, 31&nbsp;GB RAM, 2&nbsp;TB SSD, Debian 13</td>
-          </tr>
-          <tr>
-            <td>Group depth</td>
-            <td>8</td>
-          </tr>
-          <tr>
-            <td>State-actor workload</td>
-            <td>125k accounts &middot; 9M contracts &middot; min-slots=1 &middot; max-slots=100,000 &middot; power-law</td>
-          </tr>
-          <tr>
-            <td>State-actor seed</td>
-            <td>25519 (deterministic, both configs)</td>
-          </tr>
-          <tr>
-            <td>Spamoor bloat</td>
-            <td>0.5&nbsp;GB target (~8.4M ERC20 holder slots) &middot; seed <code>ubt-vs-pbt-smoke</code></td>
-          </tr>
-          <tr>
-            <td>Final DB size</td>
-            <td>UBT 57&nbsp;GB &middot; PBT 54&nbsp;GB (state-actor reported 50.7&nbsp;GB raw, 23.5M storage slots)</td>
-          </tr>
-          <tr>
-            <td>Benchmarks</td>
-            <td><code>erc20_balanceof</code> &middot; <code>erc20_approve</code> &middot; <code>mixed_sload_sstore</code> (5 parametrizations: 10/90, 30/70, 50/50, 70/30, 90/10)</td>
-          </tr>
-          <tr>
-            <td>Runs</td>
-            <td>10 per benchmark per config &mdash; 60 cold-cache sessions total</td>
-          </tr>
-          <tr>
-            <td>Cold cache protocol</td>
-            <td>Between every session: <code>sync</code>, <code>sudo sysctl -w vm.drop_caches=3</code>, restart geth with <code>--cache 0</code></td>
-          </tr>
-          <tr>
-            <td>Statistical tools</td>
-            <td>Mann-Whitney U, bootstrap 95% CIs (10k resamples), Welch's t-test, Pearson r</td>
-          </tr>
+          <tr><td>Machine</td><td>Intel Xeon Platinum 8358 @ 2.6&nbsp;GHz, 8 cores, 31&nbsp;GB RAM, 2&nbsp;TB SSD, Debian 13</td></tr>
+          <tr><td>Group depth</td><td>5</td></tr>
+          <tr><td>State-actor workload</td><td>125k accounts &middot; 12.8M contracts &middot; min-slots=1 &middot; max-slots=100,000 &middot; power-law</td></tr>
+          <tr><td>State-actor seed</td><td>25519 (deterministic, both configs)</td></tr>
+          <tr><td>Spamoor bloat</td><td>0.5&nbsp;GB target across 10 ERC20 contracts &middot; seed <code>ubt-vs-pbt-smoke</code></td></tr>
+          <tr><td>Final DB size</td><td>UBT 73&nbsp;GB &middot; PBT 71&nbsp;GB (incl. flat-state blobs)</td></tr>
+          <tr><td>Benchmarks</td><td><code>erc20_balanceof</code> &middot; <code>erc20_approve</code> &middot; <code>mixed_sload_sstore</code> (5 parametrizations: 10/90, 30/70, 50/50, 70/30, 90/10)</td></tr>
+          <tr><td>Workload spread</td><td>Power-law (Zipf) weighted schedule: 30 invocations/run across 10 contracts &mdash; counts [10,5,3,3,2,2,2,1,1,1], interleaved, identical across configs</td></tr>
+          <tr><td>Sampling</td><td>5 runs &times; 30 weighted visits &times; 3 benchmarks &times; 2 configs = 900 cold-cache invocations</td></tr>
+          <tr><td>Cold cache protocol</td><td>Between every invocation: <code>sync</code>, <code>sudo sysctl -w vm.drop_caches=3</code>, restart geth with <code>--cache 0</code></td></tr>
+          <tr><td>Statistical tools</td><td>Mann-Whitney U, bootstrap 95% CIs (10k resamples), Welch's t-test, Pearson r</td></tr>
         </tbody>
       </table>
     </div>
 
+    <h3>The weighted multi-contract workload</h3>
+    <p>Rather than hammer a single contract, the benchmark deploys 10 ERC20 contracts and visits them on a deterministic <strong>power-law schedule</strong>: a few "hot" contracts are benchmarked many times, a long tail once &mdash; mirroring real-world contract popularity. The schedule (a seeded Zipf weighting, interleaved so the hot contract isn't fired back-to-back) is a pure function of the seed and contract count, so it is byte-identical for UBT and PBT. Each visit is one cold-cache geth session against one contract.</p>
+
     <h3>The same-state guarantee</h3>
-    <p>UBT and PBT share the state-actor seed and the spamoor seed, so the EVM-level workload is byte-identical: same accounts, same contracts, same storage layout, same ERC20 with the same 8.4M holders. The two configs only differ in how a storage access maps to a trie key and in how the commit pipeline runs.</p>
+    <p>UBT and PBT share the state-actor seed and the spamoor seed, so the EVM-level workload is byte-identical: same accounts, same contracts, same storage layout, same 10 ERC20s with the same holders (the deployed contract addresses are asserted identical across configs). The two configs only differ in how a storage access maps to an on-disk key.</p>
 
-    <p><strong>Correctness anchor:</strong> the bootstrap analysis reports a <code>gas_per_slot</code> ratio of <strong>1.0000</strong> for all three benchmarks (95% CI [0.9999, 1.0001] for balanceof, [0.9995, 1.0002] for approve). Same logical work per slot in both configs &mdash; the timing comparison measures the trie, not the workload.</p>
+    <p><strong>Correctness anchor:</strong> the aggregate gas-per-slot (total gas &divide; total storage-slot accesses) is <strong>1.0000</strong> for all three benchmarks, and total slots accessed match to within 0.003%. Same logical work per slot in both configs &mdash; the timing comparison measures the key layout, not the workload.</p>
 
-    <p class="muted"><em>Caveat: per-block <code>gas_used</code> sequences are not byte-identical because the dev chain mines every 10s and RPC-submitted transactions land in different blocks by timing jitter. The mismatch is purely how txs partition into blocks; <code>gas_per_slot</code> &mdash; the right correctness metric &mdash; is identical.</em></p>
+    <p class="muted"><em>Caveat: per-block <code>gas_used</code> sequences are not byte-identical, because the dev chain seals a block every second and a faster config packs more work per block. This block-boundary jitter also makes the per-block <code>gas_per_slot</code> ratio for mixed read 1.46 &mdash; an artifact of two regimes (cheap SLOADs, expensive SSTOREs) partitioning into blocks differently. The aggregate (1.0000) is the correct same-state metric and confirms the workloads are identical.</em></p>
 
     <h3>Run-to-run stability (CV%)</h3>
     <div class="data-table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Benchmark</th>
-            <th>UBT CV%</th>
-            <th>PBT CV%</th>
-          </tr>
+          <tr><th>Benchmark</th><th>UBT CV%</th><th>PBT CV%</th></tr>
         </thead>
         <tbody>
-          <tr><td>erc20_balanceof</td><td>3.0%</td><td>3.6%</td></tr>
-          <tr><td>erc20_approve</td><td>3.9%</td><td>1.7%</td></tr>
-          <tr><td>mixed_sload_sstore</td><td>3.3%</td><td class="cell-amber">12.9%</td></tr>
+          <tr><td>erc20_balanceof</td><td>4.9%</td><td class="cell-amber">15.0%</td></tr>
+          <tr><td>erc20_approve</td><td>3.5%</td><td>2.5%</td></tr>
+          <tr><td>mixed_sload_sstore</td><td>1.3%</td><td>2.4%</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="muted"><em>Mixed-PBT's higher variance is worth flagging: the +17.5% headline holds (CI excludes 1.0), but the spread is wider than the other benchmarks.</em></p>
+    <p class="muted"><em>PBT's read benchmark is the noisiest (CV 15% over 5 runs) &mdash; cold flat-state read latency is sensitive to disk-cache state &mdash; but the 1.75&times; lead dwarfs the spread (CI [1.728, 1.780]).</em></p>
   </div>
 
   <!-- ============================================================
@@ -538,38 +504,42 @@
     <div class="section-label">Section 4</div>
     <h2>Reads &mdash; <code>erc20_balanceof</code></h2>
 
-    <p>The benchmark calls <code>balanceOf()</code> on the spamoor-deployed ERC20 against ~36k random addresses per block, until ~100M gas of work is done. Each call is a cold <code>SLOAD</code> into a different storage slot in a ~50&nbsp;GB binary trie. No writes, no execution heavy logic &mdash; pure read latency.</p>
+    <p>The benchmark calls <code>balanceOf()</code> in a loop against incrementing addresses, until ~100M gas of work is done. Each call is a cold flat-state read of a different storage slot. No trie traversal, no writes &mdash; pure read latency against the <code>'F'</code>-prefixed snapshot in a ~73&nbsp;GB Pebble store.</p>
 
     <div class="callout callout-green">
-      <strong>UBT: 15.95 Mgas/s &mdash; PBT: 17.70 Mgas/s &mdash; +11.0%</strong> (Mann-Whitney p=9.9e-12, bootstrap CI [1.071, 1.130])
+      <strong>UBT: 31.1 Mgas/s &mdash; PBT: 54.4 Mgas/s &mdash; 1.75&times;</strong> (Mann-Whitney p=1.5e-147, bootstrap CI [1.728, 1.780])
     </div>
 
     <div class="data-table-wrap">
       <table>
         <thead>
-          <tr><th>Component</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th></tr>
+          <tr><th>Component (median/block)</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>state_read_ms</code></td><td>1,285</td><td>1,143</td><td class="cell-green">&minus;11.1%</td></tr>
-          <tr><td><code>state_hash_ms</code></td><td>3.16</td><td>5.40</td><td class="cell-amber">+71%</td></tr>
-          <tr><td><code>commit_ms</code></td><td>17.9</td><td>21.2</td><td class="cell-amber">+19%</td></tr>
-          <tr><td class="cell-bold"><code>total_ms</code></td><td class="cell-bold">1,520</td><td class="cell-bold">1,384</td><td class="cell-bold cell-green">&minus;9.0%</td></tr>
+          <tr><td><code>state_read_ms</code></td><td>374.3</td><td>145.9</td><td class="cell-green">&minus;61%</td></tr>
+          <tr><td><code>state_hash_ms</code></td><td>3.3</td><td>12.5</td><td class="cell-amber">+9.2</td></tr>
+          <tr><td><code>commit_ms</code></td><td>18.1</td><td>32.7</td><td class="cell-amber">+14.6</td></tr>
+          <tr><td>storage cache hit %</td><td>12.9%</td><td>22.5%</td><td class="cell-green">+9.6pp</td></tr>
+          <tr><td class="cell-bold"><code>total_ms</code></td><td class="cell-bold">562.6</td><td class="cell-bold">353.2</td><td class="cell-bold cell-green">&minus;37%</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>State reads dominate &mdash; ~84% of total time for both configs. The Pearson correlation between <code>execution_ms</code> and <code>state_read_ms</code> is r=0.995 for both configs (p &lt; 1e-39): the benchmark is genuinely read-bound.</p>
+    <p>State reads dominate, and that is exactly where PBT wins: <strong>read time drops 61%</strong>. The tiny rises in hash/commit are per-block bookkeeping (three zone roots cost a hair more than one) and are negligible next to the read saving.</p>
 
-    <p>PBT's win is concentrated where it should be for a read workload: <strong>state_read_ms is 11% lower</strong>. Even though no commit is happening (balanceof is read-only), the small writes do post per-block bookkeeping which is why <code>commit_ms</code> rises a hair on PBT &mdash; three zone roots cost slightly more than one when there's nothing meaningful to commit.</p>
+    <div class="callout callout-amber">
+      <strong>No block-size artifact on reads.</strong> Both configs produce identical blocks here &mdash; 16.7M gas, 1 transaction each &mdash; and within each config throughput is uncorrelated with block size (r&approx;0.0). So the 1.75&times; is not a measurement bias from PBT packing bigger blocks; it is a genuine per-read difference.
+    </div>
 
-    <p><strong>Per-slot read cost</strong>: UBT 0.144 ms/slot vs PBT 0.127 ms/slot = <strong>&minus;12.1%</strong> (CI [0.862, 0.917]).</p>
+    <p><strong>Per-slot read cost</strong>: UBT 60.1&nbsp;&micro;s/slot vs PBT 21.9&nbsp;&micro;s/slot = <strong>2.7&times; faster</strong> (ratio 0.365, CI [0.356, 0.372], p=2.2e-157). <strong>Per cache-miss</strong> (i.e. per actual disk read): 2.4&times; faster (ratio 0.414).</p>
 
     <img class="graph-hero" src="graphs-light/g01_hero_time_breakdown.png" alt="Time breakdown by benchmark and config">
 
     <img class="graph-img" src="graphs-light/g02_throughput_boxplots.png" alt="Throughput boxplots (Mgas/s)">
-    <p class="graph-caption">PBT consistently above UBT across all three benchmarks. Boxes show inter-quartile range over the 10 runs.</p>
+    <p class="graph-caption">PBT well above UBT across all three benchmarks. Boxes show inter-quartile range over the runs.</p>
 
     <img class="graph-img" src="graphs-light/g05_per_miss_read_cost.png" alt="Per cache miss read cost">
+    <p class="graph-caption">Time per cache miss &mdash; the cost of one cold disk read. PBT's clustered keys make each miss ~2.4&times; cheaper.</p>
   </div>
 
   <!-- ============================================================
@@ -579,35 +549,36 @@
     <div class="section-label">Section 5</div>
     <h2>Writes &mdash; <code>erc20_approve</code></h2>
 
-    <p>The benchmark calls <code>approve(spender, value)</code> in a loop. Each call is a cold <code>SLOAD</code> (read current allowance) followed by a cold-to-warm <code>SSTORE</code> (write new allowance). The attack EOA maintains a "next free slot" bump pointer at <code>storage[0]</code>, so every run writes a fresh chunk of ~4,000 slots &mdash; never overwriting a prior run's slots (proved by gas-per-slot staying constant at 22,929 across all 10 runs).</p>
+    <p>The benchmark calls <code>approve(spender, value)</code> in a loop. Each call is a cold read of the current allowance followed by a cold-to-warm <code>SSTORE</code>. A bump pointer in storage advances every run, so each run writes a fresh chunk of slots &mdash; never overwriting a prior run's (gas-per-slot holds constant across runs).</p>
 
     <div class="callout callout-green">
-      <strong>UBT: 46.56 Mgas/s &mdash; PBT: 56.16 Mgas/s &mdash; +20.6%</strong> (Mann-Whitney p=4.5e-7, CI [1.096, 1.235])
+      <strong>UBT: 31.9 Mgas/s &mdash; PBT: 90.2 Mgas/s &mdash; 2.83&times;</strong> (Mann-Whitney p=1.6e-128, CI [2.775, 2.861])
     </div>
 
-    <p>Approve is the most parallel-commit-friendly workload, and PBT's lead is largest here.</p>
+    <p>Writes show the largest gap. Both PBT advantages stack here: the read half of each approve benefits from flat-state locality, and the write half benefits from parallel zone commit.</p>
 
     <div class="data-table-wrap">
       <table>
         <thead>
-          <tr><th>Metric</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th><th>p-value</th></tr>
+          <tr><th>Per-slot metric (PBT/UBT)</th><th>UBT</th><th>PBT</th><th>ratio</th><th>p-value</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>ms_per_slot_read</code></td><td>0.113</td><td>0.084</td><td class="cell-bold cell-green">&minus;25.6%</td><td class="cell-dim">6.8e-08</td></tr>
-          <tr><td><code>ms_per_slot_hash</code></td><td>0.292</td><td>0.237</td><td class="cell-bold cell-green">&minus;18.6%</td><td class="cell-dim">6.8e-08</td></tr>
-          <tr><td><code>ms_per_cache_miss</code></td><td>0.141</td><td>0.108</td><td class="cell-bold cell-green">&minus;23.2%</td><td class="cell-dim">4.5e-07</td></tr>
-          <tr><td><code>ms_per_slot_total</code></td><td>0.492</td><td>0.408</td><td class="cell-bold cell-green">&minus;17.1%</td><td class="cell-dim">5.2e-07</td></tr>
+          <tr><td><code>ms_per_slot_read</code></td><td>349.9&micro;s</td><td>79.4&micro;s</td><td class="cell-bold cell-green">0.227</td><td class="cell-dim">1.6e-128</td></tr>
+          <tr><td><code>ms_per_slot_hash</code></td><td>&mdash;</td><td>&mdash;</td><td class="cell-bold cell-green">0.412</td><td class="cell-dim">1.6e-128</td></tr>
+          <tr><td><code>ms_per_cache_miss</code></td><td>&mdash;</td><td>&mdash;</td><td class="cell-bold cell-green">0.276</td><td class="cell-dim">1.6e-128</td></tr>
+          <tr><td><code>ms_per_slot_total</code></td><td>&mdash;</td><td>&mdash;</td><td class="cell-bold cell-green">0.354</td><td class="cell-dim">1.6e-128</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>Every cost component &mdash; reads, hashing, cache-miss latency, total per-slot time &mdash; is meaningfully lower for PBT. The hash savings (&minus;18.6% per slot) come straight from running the three zone subtries' commit passes in parallel: with three subtries instead of one bigger one, the per-block critical path shortens even when wall-clock SHA-256 work is the same.</p>
+    <p>Every per-slot component is dramatically lower for PBT. Reads are 4.4&times; cheaper per slot (locality); hashing is 2.4&times; cheaper per slot (parallel zone commit). These per-slot metrics are normalized by slots touched, so they are immune to the block-packing difference noted below.</p>
 
-    <p class="muted"><em>Note: <code>total_ms</code> for approve shows &minus;12.6% (PBT faster) but Mann-Whitney p=0.081 &mdash; not significant due to high run-variance in absolute milliseconds. The throughput and per-slot metrics tell a tighter story; trust those.</em></p>
+    <div class="callout callout-amber">
+      <strong>Block-size asymmetry is present here &mdash; but is not the driver.</strong> Because PBT executes faster, its 1-second dev blocks pack more work (PBT ~50M gas / 3 tx per block vs UBT ~25M / 2 tx). Throughput is only weakly correlated with block size within a config, and the per-slot metrics above &mdash; which divide out block size entirely &mdash; still show 2.4&ndash;4.4&times; PBT advantages. The packing difference is a <em>consequence</em> of PBT being faster, not a cause of the measured gap.
+    </div>
 
     <img class="graph-img" src="graphs-light/g07_per_slot_total_time.png" alt="Per-slot total time">
     <img class="graph-img" src="graphs-light/g08_per_slot_write_cost.png" alt="Per-slot write cost">
-    <img class="graph-img" src="graphs-light/g06_cold_tail_effect.png" alt="Cold tail effect">
   </div>
 
   <!-- ============================================================
@@ -617,30 +588,31 @@
     <div class="section-label">Section 6</div>
     <h2>Mixed &mdash; <code>mixed_sload_sstore</code></h2>
 
-    <p>Five parametrizations split a block's gas budget between SLOAD and SSTORE phases: 10/90, 30/70, 50/50, 70/30, 90/10. The runtime <code>GAS</code> opcode picks the cutoff dynamically, so each parametrization actually executes the requested ratio.</p>
+    <p>Five parametrizations split a block's gas budget between SLOAD and SSTORE phases: 10/90, 30/70, 50/50, 70/30, 90/10. The runtime <code>GAS</code> opcode picks the cutoff dynamically, so each parametrization executes the requested ratio.</p>
 
     <div class="callout callout-green">
-      <strong>UBT: 22.60 Mgas/s &mdash; PBT: 26.56 Mgas/s &mdash; +17.5%</strong> (Mann-Whitney p=1.3e-5, CI [1.068, 1.313])
+      <strong>UBT: 28.8 Mgas/s &mdash; PBT: 69.3 Mgas/s &mdash; 2.41&times;</strong> (Mann-Whitney p&approx;0, CI [2.392, 2.419])
     </div>
 
     <div class="data-table-wrap">
       <table>
         <thead>
-          <tr><th>Metric</th><th>UBT</th><th>PBT</th><th>PBT vs UBT</th><th>p-value</th></tr>
+          <tr><th>Per-slot metric (PBT/UBT)</th><th>ratio</th><th>p-value</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>ms_per_slot_read</code></td><td>0.145</td><td>0.117</td><td class="cell-bold cell-green">&minus;19.6%</td><td class="cell-dim">1.1e-42</td></tr>
-          <tr><td><code>ms_per_cache_miss</code></td><td>0.198</td><td>0.162</td><td class="cell-bold cell-green">&minus;18.1%</td><td class="cell-dim">5.3e-17</td></tr>
-          <tr><td><code>ms_per_slot_total</code></td><td>0.208</td><td>0.182</td><td class="cell-bold cell-green">&minus;12.7%</td><td class="cell-dim">4.9e-09</td></tr>
+          <tr><td><code>ms_per_slot_read</code></td><td class="cell-bold cell-green">0.329</td><td class="cell-dim">&approx;0</td></tr>
+          <tr><td><code>ms_per_slot_hash</code></td><td class="cell-bold cell-green">0.708</td><td class="cell-dim">4.7e-57</td></tr>
+          <tr><td><code>ms_per_cache_miss</code></td><td class="cell-bold cell-green">0.356</td><td class="cell-dim">&approx;0</td></tr>
+          <tr><td><code>ms_per_slot_total</code></td><td class="cell-bold cell-green">0.497</td><td class="cell-dim">2.3e-267</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>The mixed workload's gain sits between balanceof's (11%) and approve's (21%) &mdash; about where the gas-weighted blend of the two would put it. Run-to-run variance is higher for PBT on this benchmark (CV 12.9%), so the confidence interval is wider, but the headline is still clearly significant.</p>
+    <p>The mixed result lands between reads and writes &mdash; a gas-weighted blend of the two, as expected. The read component (3.0&times; per slot) carries most of the gain; parallel hashing adds the rest.</p>
 
     <img class="graph-img" src="graphs-light/g04_cache_hit_panels.png" alt="Cache hit rates and per-block scatter">
     <img class="graph-img" src="graphs-light/g03_evm_tax_scatter.png" alt="Execution time vs state-read time">
-    <p class="graph-caption">For both configs, <code>execution_ms</code> tracks <code>state_read_ms</code> with r&gt;0.99. The benchmarks are I/O-bound; trie cost <em>is</em> the dominant cost.</p>
+    <p class="graph-caption">For both configs, <code>execution_ms</code> tracks <code>state_read_ms</code> closely. The benchmarks are I/O-bound; state-access cost <em>is</em> the dominant cost.</p>
   </div>
 
   <!-- ============================================================
@@ -650,7 +622,7 @@
     <div class="section-label">Section 7</div>
     <h2>Where does PBT win?</h2>
 
-    <p>Throughput is a single number. The per-slot decomposition shows <em>which</em> trie operations PBT speeds up, and which (if any) it doesn't.</p>
+    <p>Throughput is a single number. The per-slot decomposition shows <em>which</em> operations PBT speeds up, and tracing the read win to its source explains <em>why</em>.</p>
 
     <div class="data-table-wrap">
       <table>
@@ -663,46 +635,31 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td><code>ms_per_slot_read</code></td>
-            <td class="cell-green">0.880</td>
-            <td class="cell-green">0.744</td>
-            <td class="cell-green">0.805</td>
-          </tr>
-          <tr>
-            <td><code>ms_per_slot_hash</code></td>
-            <td class="cell-dim">&mdash;</td>
-            <td class="cell-green">0.814</td>
-            <td>0.881</td>
-          </tr>
-          <tr>
-            <td><code>ms_per_cache_miss</code></td>
-            <td class="cell-green">0.893</td>
-            <td class="cell-green">0.768</td>
-            <td class="cell-green">0.819</td>
-          </tr>
-          <tr>
-            <td><code>ms_per_slot_total</code></td>
-            <td class="cell-green">0.901</td>
-            <td class="cell-green">0.829</td>
-            <td class="cell-green">0.873</td>
-          </tr>
+          <tr><td><code>ms_per_slot_read</code></td><td class="cell-green">0.365</td><td class="cell-green">0.227</td><td class="cell-green">0.329</td></tr>
+          <tr><td><code>ms_per_slot_hash</code></td><td class="cell-dim">&mdash;</td><td class="cell-green">0.412</td><td class="cell-green">0.708</td></tr>
+          <tr><td><code>ms_per_cache_miss</code></td><td class="cell-green">0.414</td><td class="cell-green">0.276</td><td class="cell-green">0.356</td></tr>
+          <tr><td><code>ms_per_slot_total</code></td><td class="cell-green">0.572</td><td class="cell-green">0.354</td><td class="cell-green">0.497</td></tr>
         </tbody>
       </table>
     </div>
 
+    <h3>The read win is disk locality</h3>
+    <p>Decomposing the read-time gap (block-size-independent): PBT is ~2.4&times; faster <em>per cold disk read</em>, and additionally takes ~1.13&times; <em>fewer</em> reads (higher cache hit rate). The fewer-reads piece accounts for only ~13% of the gap; the dominant factor is each disk read being cheaper. Since the flat-state blob format is byte-identical between configs, the only thing that can make a read cheaper is <strong>where the blob sits on disk</strong>.</p>
+
+    <p>That traces directly to the key derivation (Section 2). For a benchmark that reads many slots of one contract, PBT's keys &mdash; sharing a <code>zone + H(addr)</code> prefix &mdash; are contiguous in Pebble, so the reads become a near-sequential SSTable scan with strong page locality. UBT's keys &mdash; a full hash of <code>(addr, slot)</code> &mdash; are scattered, so the same reads are random seeks across a 73&nbsp;GB store. The higher in-memory cache hit rate for PBT (22% vs 13%) is a <em>symptom</em> of the same clustering, not an independent effect.</p>
+
     <h3>Patterns that hold</h3>
 
     <div class="pattern-card" style="border-color: #F59E0B;">
-      <p><strong>Pattern 1: PBT is faster on every per-slot timing metric.</strong> Reads are 12&ndash;26% faster; per-miss latency is 11&ndash;23% lower. The zone partitioning produces smaller subtries, which gives shorter average path lengths from root to leaf within each zone &mdash; fewer Pebble lookups per slot.</p>
+      <p><strong>Pattern 1: the advantage migrated, it didn't disappear.</strong> Pre-flat-state (trie traversal, GD8), PBT's read win was +11% from shorter zone paths. Flat-state removes trie traversal from reads entirely &mdash; yet the read win grew to 1.75&times;, because zone partitioning <em>also</em> clusters flat-state blobs on disk.</p>
     </div>
 
     <div class="pattern-card" style="border-color: #F59E0B;">
-      <p><strong>Pattern 2: Hash time wins are bigger when there's hashing to do.</strong> PBT's hash advantage shows up on approve (&minus;19%) and mixed (&minus;12%) but is small or negative on balanceof. With three zone subtries committing in parallel, write-heavy workloads benefit more.</p>
+      <p><strong>Pattern 2: parallel commit adds to it on writes.</strong> PBT's per-slot hash cost is 0.41&times; on approve and 0.71&times; on mixed &mdash; the three zone subtries hashing concurrently. This stacks on top of the read-locality win, which is why writes show the biggest overall gap (2.83&times;).</p>
     </div>
 
     <div class="pattern-card" style="border-color: #F59E0B;">
-      <p><strong>Pattern 3: <code>gas_per_slot</code> is identical.</strong> 22,929.85 (UBT) vs 22,927.02 (PBT) for approve &mdash; bootstrap CI [0.9995, 1.0002]. PBT's gain is genuine engineering, not a hidden gas-schedule shift.</p>
+      <p><strong>Pattern 3: the workload is identical.</strong> Aggregate gas-per-slot = 1.0000 on all three benchmarks; total slots accessed match to 0.003%. PBT's gain is genuine layout engineering, not a hidden workload or gas-schedule shift.</p>
     </div>
   </div>
 
@@ -714,31 +671,31 @@
     <h2>Verdict</h2>
 
     <div class="recommendation">
-      <div class="big-text">Zone partitioning + parallel commit is a clear win.</div>
-      <p>+11&ndash;21% Mgas/s across all three benchmarks, with significance well above the noise floor and CIs that exclude 1.0. The same-state guarantee holds (identical gas per slot). The per-slot decomposition shows the wins are in trie traversal and per-zone hashing &mdash; exactly where the design intended.</p>
+      <div class="big-text">Zone partitioning is a large win &mdash; especially with flat state.</div>
+      <p>1.75&times;&ndash;2.83&times; Mgas/s across all three benchmarks, with significance far above the noise floor and CIs that exclude 1.0 by a wide margin. The same-state guarantee holds. The win is driven primarily by <strong>flat-state disk locality</strong>: clustering a contract's storage blobs turns random seeks into sequential reads. Parallel zone commit adds a second, smaller win on the write path.</p>
     </div>
 
     <h3>Caveats worth keeping in mind</h3>
     <ul>
-      <li><strong>Scale.</strong> 50&nbsp;GB DBs on an 8-core box with 31&nbsp;GB RAM &mdash; a useful mid-scale result, not the 400&nbsp;GB / 100-runs scale of the production MPT-vs-BT campaign. The +21% writes finding deserves re-running at full scale before publishing externally.</li>
-      <li><strong>Mixed-PBT variance.</strong> CV 12.9% for the mixed benchmark on PBT (vs ~3% elsewhere). The +17.5% headline holds, but with wider error bars than the other two.</li>
-      <li><strong>Total-ms vs per-slot.</strong> <code>erc20_approve</code> total-ms shows &minus;12.6% (PBT faster) but p=0.081 &mdash; total-ms has high absolute-time variance. Throughput and per-slot metrics give the reliable signal.</li>
-      <li><strong>Benchmarks are narrow.</strong> Three ERC20 microbenchmarks, all hitting a single contract's storage. Real workloads access many contracts of varying sizes; the zone-partitioning advantage may shift with workload mix.</li>
+      <li><strong>The workload favors per-contract locality &mdash; on purpose.</strong> Each invocation reads/writes many slots of one contract, which is exactly where PBT's per-contract clustering pays off. This is realistic for ERC20 traffic (many holders of one token), and the power-law schedule mirrors real contract skew &mdash; but a workload that touched one slot each across many random contracts would see a smaller PBT advantage.</li>
+      <li><strong>Block-size asymmetry on writes/mixed.</strong> PBT's faster execution packs ~2&times; more work per 1-second dev block. The per-slot metrics divide this out and still favor PBT, but raw per-block throughput is partly amplified by it.</li>
+      <li><strong>Read-benchmark variance.</strong> PBT's <code>erc20_balanceof</code> CV is 15% over 5 runs (cold read latency is disk-cache sensitive). The 1.75&times; headline holds comfortably, but with wider error bars than the write benchmark.</li>
+      <li><strong>Scale.</strong> 73&nbsp;GB DBs on an 8-core box with 31&nbsp;GB RAM &mdash; a useful mid-scale result. The magnitude of the locality win may shift at mainnet scale and with different SSD/RAM ratios.</li>
     </ul>
 
     <h3>Open questions</h3>
     <ul>
-      <li>Does the lead hold at 400&nbsp;GB scale and 100 runs per benchmark?</li>
-      <li>Does PBT help when many small contracts dominate (not just one large ERC20)?</li>
-      <li>Where does the &minus;25% per-slot read win actually come from &mdash; smaller per-zone trie depth, better cache locality within a zone, or both?</li>
+      <li>How much of the locality win survives when the working set fits in RAM (warm cache), versus this cold-cache, seek-bound regime?</li>
+      <li>Does the advantage shrink for workloads that spread thinly across many contracts rather than concentrating per contract?</li>
+      <li>Can UBT recover most of the gap with a locality-preserving key derivation, without full zone partitioning?</li>
     </ul>
   </div>
 
   <!-- Footer -->
   <footer>
     <p>Methodology, raw data, and reproducibility scripts in the <a href="https://github.com/weiihann/bintrie-benchmarks/tree/pbt/ubt-vs-pbt">bintrie-benchmarks repository</a>.<br>
-    Geth branches: <code>feat/binary-trie/bitarray</code> (UBT) &middot; <code>binary/pbt</code> (PBT).<br>
-    State-actor branches: <code>bench/bitarray-base</code> (UBT) &middot; <code>bench/bitarray-pbt</code> (PBT).</p>
+    Geth branches: <code>feat/binary-trie/flat-state</code> (UBT) &middot; <code>binary/pbt-flat-state</code> (PBT).<br>
+    State-actor branches: <code>bench/flat-state-base</code> (UBT) &middot; <code>bench/flat-state-pbt</code> (PBT).</p>
   </footer>
 
 </div>

@@ -218,10 +218,14 @@ def extract_config(args):
         block_rows = []
         print(f"\n--- {bench} ---")
 
-        # Match both single-contract logs ({bench}_run{run}_geth.log) and
-        # multi-contract logs ({bench}_run{run}_c{idx}_geth.log).
+        # Match single-contract logs ({bench}_run{run}_geth.log), multi-contract
+        # logs ({bench}_run{run}_c{idx}_geth.log), and weighted-schedule logs
+        # ({bench}_run{run}_c{idx}_v{visit}_geth.log). The visit suffix only keeps
+        # filenames unique when a hot contract is visited repeatedly; it is not a
+        # grouping key, so repeat visits simply contribute more rows for that
+        # contract (which is the power-law weighting reflected in the data).
         pattern = re.compile(
-            rf"^{re.escape(bench)}_run(\d+)(?:_c(\d+))?_geth\.log$"
+            rf"^{re.escape(bench)}_run(\d+)(?:_c(\d+))?(?:_v(\d+))?_geth\.log$"
         )
         logs = sorted(
             p for p in results_dir.glob(f"{bench}_run*_geth.log")
