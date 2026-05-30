@@ -32,14 +32,11 @@ export EXEC_SPECS="${EXEC_SPECS:-/Users/han/Documents/Codes/execution-specs}"
 export UV="${UV:-$(command -v uv 2>/dev/null || echo /Users/han/.local/bin/uv)}"
 export NUM_RUNS="${NUM_RUNS:-1}"
 export TARGET_SIZE="${TARGET_SIZE:-1GB}"
-export SPAMOOR_TARGET_GB="${SPAMOOR_TARGET_GB:-0.1}"
 export NUM_CONTRACTS="${NUM_CONTRACTS:-10}"
-export CONTRACT_ORDER_SEED="${CONTRACT_ORDER_SEED:-ubt-vs-pbt-contract-order}"
-export VISITS_PER_RUN="${VISITS_PER_RUN:-30}"
-export POWERLAW_EXP="${POWERLAW_EXP:-1.0}"
+export GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-16}"
 export GROUP_DEPTH="${GROUP_DEPTH:-5}"
 export COLD_CACHE="${COLD_CACHE:-0}"
-export BENCHMARKS="${BENCHMARKS:-erc20_balanceof erc20_approve mixed_sload_sstore}"
+export BENCHMARKS="${BENCHMARKS:-scattered_sload scattered_sstore scattered_mixed}"
 export RESULTS_DIR
 export DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
 
@@ -62,13 +59,10 @@ Usage: $0 [--help]
 
 UBT vs PBT end-to-end campaign. All knobs via env vars (see README.md):
 
-  NUM_RUNS         (default $NUM_RUNS)        runs per benchmark per config
+  NUM_RUNS         (default $NUM_RUNS)        runs per benchmark per config (1 cold 1-tx block each)
   TARGET_SIZE      (default $TARGET_SIZE)     state-actor DB target size
-  SPAMOOR_TARGET_GB (default $SPAMOOR_TARGET_GB) ERC20 bloat target (split across contracts)
-  NUM_CONTRACTS    (default $NUM_CONTRACTS)        ERC20 contracts to deploy + benchmark
-  CONTRACT_ORDER_SEED (default $CONTRACT_ORDER_SEED) seed pinning the weighted visit schedule
-  VISITS_PER_RUN   (default $VISITS_PER_RUN)        weighted benchmark invocations per run (power-law across contracts)
-  POWERLAW_EXP     (default $POWERLAW_EXP)       Zipf exponent for the contract-visit weighting
+  NUM_CONTRACTS    (default $NUM_CONTRACTS)        scattered getter contracts to deploy + sweep
+  GAS_BENCHMARK_VALUE (default $GAS_BENCHMARK_VALUE) gas per invocation, in M (one tx ≈ 16M = one block)
   GROUP_DEPTH      (default $GROUP_DEPTH)     bintrie group depth
   COLD_CACHE       (default $COLD_CACHE)      drop OS+pebble caches (Linux + sudo)
   BENCHMARKS       (default "$BENCHMARKS")

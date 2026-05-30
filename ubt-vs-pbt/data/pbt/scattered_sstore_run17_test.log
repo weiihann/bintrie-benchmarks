@@ -1,0 +1,35 @@
+Executing: pytest -c 
+/mnt/state_expiry_vol_data/execution-specs/packages/testing/src/execution_testin
+g/cli/pytest_commands/pytest_ini_files/pytest-execute.ini --rootdir . --fork 
+Osaka --tx-wait-timeout 600 --gas-benchmark-values 16 --address-stubs 
+/mnt/state_expiry_vol_data/execution-specs/tests/benchmark/stateful/bloatnet/stu
+bs_bloatnet.json 
+tests/benchmark/stateful/bloatnet/test_scattered_erc20.py::test_scattered_approv
+e -v
+2026-05-29 19:13:33 [[36mINFO[0m] ./packages/testing/src/execution_testing/rpc/rpc.py:341: Batch RPC: 6000 responses received
+2026-05-29 19:13:33 [[36mINFO[0m] ./packages/testing/src/execution_testing/cli/pytest_commands/plugins/shared/execute_fill.py:91: Validated 2000 address stubs: 2000 contracts, 0 EOAs
+2026-05-29 19:13:33 [[36mINFO[0m] ./packages/testing/src/execution_testing/rpc/rpc.py:480: Requesting chainid of provided RPC endpoint..
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-8.4.2, pluggy-1.6.0 -- /mnt/state_expiry_vol_data/execution-specs/.venv/bin/python3
+[1mStart seed for EOA: 0x3ce0992b541300c84b3bb0b5a8447040806d5096d4c18f64d3e452aa8b96a835 [39;49m
+[1mGenerating fixtures for: Osaka[39;49m
+[1m[93mOnly generating fixtures with stable/deployed forks: Specify an upcoming fork via --until=fork to add forks under development.[39;49m
+cachedir: .pytest_cache
+Log file: logs/execute-remote-20260529-191332-main.log
+metadata: {'Python': '3.13.5', 'Platform': 'Linux-6.12.85+deb13-amd64-x86_64-with-glibc2.41', 'Packages': {'pytest': '8.4.2', 'pluggy': '1.6.0'}, 'Plugins': {'regex': '0.2.0', 'xdist': '3.8.0', 'json-report': '1.5.0', 'html': '4.1.1', 'custom-report': '1.0.1', 'cov': '4.1.0', 'metadata': '3.1.1'}, 'Command-line args': '<code>execute -c /mnt/state_expiry_vol_data/execution-specs/packages/testing/src/execution_testing/cli/pytest_commands/pytest_ini_files/pytest-execute.ini --rootdir . --fork Osaka --tx-wait-timeout 600 --gas-benchmark-values 16 --address-stubs /mnt/state_expiry_vol_data/execution-specs/tests/benchmark/stateful/bloatnet/stubs_bloatnet.json tests/benchmark/stateful/bloatnet/test_scattered_erc20.py::test_scattered_approve -v</code>', 'Senders': {}}
+rootdir: /mnt/state_expiry_vol_data/execution-specs
+configfile: packages/testing/src/execution_testing/cli/pytest_commands/pytest_ini_files/pytest-execute.ini
+plugins: regex-0.2.0, xdist-3.8.0, json-report-1.5.0, html-4.1.1, custom-report-1.0.1, cov-4.1.0, metadata-3.1.1
+collecting ...  pytest-regex selected 1 tests to run for regex: .*
+collected 1 item
+
+tests/benchmark/stateful/bloatnet/test_scattered_erc20.py::test_scattered_approve[fork_Osaka-benchmark_test-benchmark-gas-value_16M] PASSED [1/1]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/_pytest/config/__init__.py:812
+  /mnt/state_expiry_vol_data/execution-specs/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py:812: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; execution_testing.cli.pytest_commands.plugins.execute.pre_alloc
+    self.import_plugin(arg, consider_entry_points=True)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- Log file: /mnt/state_expiry_vol_data/execution-specs/logs/execute-remote-20260529-191332-main.log -
+======================== 1 passed, 1 warning in 29.54s =========================

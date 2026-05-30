@@ -41,7 +41,7 @@ except ImportError:
 
 
 CONFIGS = ["ubt", "pbt"]
-BENCHMARKS = ["erc20_balanceof", "erc20_approve", "mixed_sload_sstore"]
+BENCHMARKS = ["scattered_sload", "scattered_sstore", "scattered_mixed"]
 SUMMARY_COLS = ["total_ms", "mgas_per_sec", "state_read_ms", "state_hash_ms",
                 "commit_ms", "storage_cache_hit_rate"]
 COMPARISON_METRICS = ["total_ms", "mgas_per_sec", "ms_per_slot_read",
@@ -215,7 +215,7 @@ def print_separator(char="=", width=100):
 def should_include_metric(bench, metric):
     """Determine whether a metric applies to a given benchmark."""
     # ms_per_slot_hash only for approve/mixed (write benchmarks)
-    if metric == "ms_per_slot_hash" and bench == "erc20_balanceof":
+    if metric == "ms_per_slot_hash" and bench == "scattered_sload":
         return False
     return True
 
@@ -465,12 +465,12 @@ def main():
     # =========================================================================
     print()
     print_separator()
-    print("  COLD TAIL ANALYSIS: PBT erc20_approve -- ms_per_cache_miss by tx_count")
+    print("  COLD TAIL ANALYSIS: PBT scattered_sstore -- ms_per_cache_miss by tx_count")
     print_separator()
 
     results["cold_tail"] = {}
 
-    rows_pbt_approve = data["pbt"].get("erc20_approve", [])
+    rows_pbt_approve = data["pbt"].get("scattered_sstore", [])
     if rows_pbt_approve:
         by_txcount = defaultdict(list)
         for r in rows_pbt_approve:

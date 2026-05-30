@@ -28,9 +28,9 @@ BENCHMARKS = [
     "sstore_variants",
     "sload_benchmark",
     "sload_same_key",
-    "erc20_balanceof",
-    "erc20_approve",
-    "mixed_sload_sstore",
+    "scattered_sload",
+    "scattered_sstore",
+    "scattered_mixed",
 ]
 
 # CSV columns — config metadata prepended to block-level data.

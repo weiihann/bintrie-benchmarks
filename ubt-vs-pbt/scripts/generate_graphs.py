@@ -45,11 +45,11 @@ COLORS: dict[str, str] = {
     "pbt": "#F59E0B",  # amber
 }
 
-BENCHMARKS = ["erc20_balanceof", "erc20_approve", "mixed_sload_sstore"]
+BENCHMARKS = ["scattered_sload", "scattered_sstore", "scattered_mixed"]
 BENCH_LABELS: dict[str, str] = {
-    "erc20_balanceof": "balanceOf",
-    "erc20_approve": "approve",
-    "mixed_sload_sstore": "mixed",
+    "scattered_sload": "balanceOf",
+    "scattered_sstore": "approve",
+    "scattered_mixed": "mixed",
 }
 
 STACKED_COMPONENTS = ["state_read_ms", "execution_ms", "state_hash_ms", "commit_ms"]
@@ -420,7 +420,7 @@ def g02_throughput_boxplots(all_data: dict, theme: Theme,
         ax.grid(axis="y", alpha=0.3)
 
         # Gas schedule caveat for approve and mixed panels
-        if bench in ("erc20_approve", "mixed_sload_sstore"):
+        if bench in ("scattered_sstore", "scattered_mixed"):
             ax.text(0.5, -0.10,
                     "\u26a0 Different gas schedules\n(EIP-4762 vs EIP-2929)",
                     ha="center", va="top", fontsize=6.5, color="#94A3B8",
@@ -544,8 +544,8 @@ def g04_cache_hit_panels(all_data: dict, theme: Theme,
 
     # --- Panel B: PBT scatter: cache hit rate vs tx_count ---
     if "pbt" in all_data:
-        bench_colors = {"erc20_balanceof": "#3B82F6", "erc20_approve": "#EF4444",
-                        "mixed_sload_sstore": "#10B981"}
+        bench_colors = {"scattered_sload": "#3B82F6", "scattered_sstore": "#EF4444",
+                        "scattered_mixed": "#10B981"}
         for bench in BENCHMARKS:
             rows = [r for r in all_data["pbt"] if r["benchmark"] == bench]
             if not rows:
@@ -672,7 +672,7 @@ def g06_cold_tail_effect(all_data: dict, theme: Theme,
         return
 
     rows = [r for r in all_data["pbt"]
-            if r["benchmark"] == "erc20_approve" and r.get("ms_per_cache_miss") is not None]
+            if r["benchmark"] == "scattered_sstore" and r.get("ms_per_cache_miss") is not None]
     if not rows:
         print("  SKIP g06_cold_tail_effect: no approve data with cache misses")
         return
@@ -795,7 +795,7 @@ def g07_per_slot_total_time(all_data: dict, theme: Theme,
 def g08_per_slot_write_cost(all_data: dict, theme: Theme,
                             output_dir: Path, dpi: int) -> None:
     """Boxplot of ms_per_slot_hash for approve, UBT vs PBT."""
-    write_benches = ["erc20_approve"]
+    write_benches = ["scattered_sstore"]
     active = [b for b in write_benches
               if any(cfg in filter_benchmark(all_data, b) for cfg in CONFIGS)]
     if not active:
