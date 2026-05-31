@@ -31,11 +31,17 @@ STATE_ACTOR_SEED="${STATE_ACTOR_SEED:-25519}"
 UV="${UV:-$(command -v uv 2>/dev/null || echo uv)}"
 # Number of scattered target (getter) contracts to deploy via the CREATE2
 # factory. Addresses are deterministic (salts 0..N-1), identical across configs.
+# A matching count of empty-code "account" contracts is also deployed at salts
+# NUM_CONTRACTS..2*NUM_CONTRACTS-1 for the account-zone benchmarks.
 NUM_CONTRACTS="${NUM_CONTRACTS:-10}"
-# Init code of the getter contract the factory CREATE2-deploys. Runtime: on call
-# with calldata [slot,value,isWrite], SSTORE(slot,value) if isWrite else
-# POP(SLOAD(slot)); constructor SSTOREs slot 0 (a populated cold read target).
-GETTER_INITCODE="${GETTER_INITCODE:-0x600160005561001c60008160108239f3604035600d5801576000355450600b5801565b602035600035555b00}"
+# Number of stems the getter constructor pre-populates (one slot 0 SSTORE per
+# stem at stride 256). T_TOUCHES in the locality_sweep test must be ≤ NUM_STEMS
+# so K=1 sloads always hit populated slots.
+NUM_STEMS="${NUM_STEMS:-256}"
+# Initcodes (hex 0x...) are generated at runtime from build_initcode.py so the
+# bytecode and the per-stem SSTORE count stay in lockstep.
+GETTER_INITCODE=$(python3 "$CAMPAIGN_DIR/scripts/build_initcode.py" getter "$NUM_STEMS")
+ACCOUNT_INITCODE=$(python3 "$CAMPAIGN_DIR/scripts/build_initcode.py" empty)
 
 # state-actor direct scaling flags (opt-in; only passed when set).
 # Without these, state-actor falls back to its defaults (1000 accounts /
@@ -244,38 +250,34 @@ for spec in "${CONFIGS[@]}"; do
     exit 1
   fi
 
-  # Deploy NUM_CONTRACTS tiny getter contracts via spamoor's CREATE2 factory.
-  # Each getter, on call, does SLOAD/SSTORE (calldata [slot,value,isWrite]) and
-  # its constructor SSTOREs slot 0 (a populated cold read target). CREATE2 with
-  # sequential salts 0..N-1 makes addresses deterministic and identical across
-  # configs (same well-known factory + same init code), so the scattered sweep
-  # touches a different contract each op. This deploys thousands in minutes
-  # (no per-contract wallet distribution, unlike erc20_bloater).
-  deploy_log="$config_results/factorydeploy.log"
-  log "  [phase2] Deploying $NUM_CONTRACTS getter contracts via factorydeploytx (CREATE2)"
+  accounts_file="$config_results/accounts.json"
+
+  # ── Deploy 1: getter contracts (storage benchmarks) ──────────────────────
+  # NUM_CONTRACTS getters via CREATE2 (salts 0..N-1). Each getter's runtime
+  # accepts [slot,value,isWrite]; its constructor pre-populates NUM_STEMS stems
+  # (slot=stem_idx*256 ← 1) so cold SLOADs always hit populated slots.
+  getter_log="$config_results/factorydeploy_getter.log"
+  log "  [phase2] Deploying $NUM_CONTRACTS getter contracts (NUM_STEMS=$NUM_STEMS pre-populated stems)"
   "$SPAMOOR_BIN" factorydeploytx \
     --rpchost="http://localhost:8545" \
     --privkey="$PRIVKEY" \
     --count="$NUM_CONTRACTS" \
     --init-code="$GETTER_INITCODE" \
     --start-salt=0 \
-    -v > "$deploy_log" 2>&1
+    -v > "$getter_log" 2>&1
 
-  FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$deploy_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
+  FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$getter_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
   if [ -z "$FACTORY" ]; then
-    log "    ERROR: could not extract CREATE2 factory address"
-    tail -20 "$deploy_log"
+    log "    ERROR: getter deploy: could not extract CREATE2 factory address"
+    tail -20 "$getter_log"
     kill_geth
     exit 1
   fi
-  log "    factory=$FACTORY — computing $NUM_CONTRACTS CREATE2 addresses"
-
-  # Recompute the deterministic CREATE2 addresses and write contracts.json.
+  log "    factory=$FACTORY — computing $NUM_CONTRACTS getter CREATE2 addresses"
   "$UV" run --with "eth-hash[pycryptodome]" python \
     "$CAMPAIGN_DIR/scripts/compute_create2_addresses.py" \
-    "$FACTORY" "$GETTER_INITCODE" "$NUM_CONTRACTS" "$contracts_file" 2>&1 | tee -a "$deploy_log"
+    "$FACTORY" "$GETTER_INITCODE" "$NUM_CONTRACTS" "$contracts_file" 0 2>&1 | tee -a "$getter_log"
 
-  # Verify the first computed getter actually carries code on-chain.
   sample=$(python3 -c "import json; print(json.load(open('$contracts_file'))[0])")
   code_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
     -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$sample\",\"latest\"],\"id\":1}" \
@@ -285,8 +287,50 @@ for spec in "${CONFIGS[@]}"; do
     kill_geth
     exit 1
   fi
+  log "    [getter] $NUM_CONTRACTS deployed, sample $sample (${code_len} bytes)"
+
+  # ── Deploy 2: empty-code accounts (account-zone benchmarks) ──────────────
+  # Same CREATE2 factory + 5-byte init code that returns a 0-byte runtime → the
+  # deployed address exists in basic-data with no code/storage. Used as targets
+  # for BALANCE and value-transfer benchmarks so the touch lands purely in the
+  # account zone. Salts start at NUM_CONTRACTS to avoid colliding with the
+  # getter address set.
+  account_log="$config_results/factorydeploy_account.log"
+  ACCOUNT_START_SALT="$NUM_CONTRACTS"
+  log "  [phase2] Deploying $NUM_CONTRACTS empty-code accounts (start salt=$ACCOUNT_START_SALT)"
+  "$SPAMOOR_BIN" factorydeploytx \
+    --rpchost="http://localhost:8545" \
+    --privkey="$PRIVKEY" \
+    --count="$NUM_CONTRACTS" \
+    --init-code="$ACCOUNT_INITCODE" \
+    --start-salt="$ACCOUNT_START_SALT" \
+    -v > "$account_log" 2>&1
+
+  ACCOUNT_FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$account_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
+  if [ -z "$ACCOUNT_FACTORY" ]; then
+    log "    ERROR: account deploy: could not extract CREATE2 factory address"
+    tail -20 "$account_log"
+    kill_geth
+    exit 1
+  fi
+  "$UV" run --with "eth-hash[pycryptodome]" python \
+    "$CAMPAIGN_DIR/scripts/compute_create2_addresses.py" \
+    "$ACCOUNT_FACTORY" "$ACCOUNT_INITCODE" "$NUM_CONTRACTS" "$accounts_file" "$ACCOUNT_START_SALT" \
+    2>&1 | tee -a "$account_log"
+
+  sample_account=$(python3 -c "import json; print(json.load(open('$accounts_file'))[0])")
+  # Empty-account: code length should be EXACTLY 0 (contract exists, has no code).
+  acode_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$sample_account\",\"latest\"],\"id\":1}" \
+    | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
+  if [ "$acode_len" -ne 0 ] 2>/dev/null; then
+    log "    ERROR: sample account $sample_account has ${acode_len}B code (expected 0)"
+    kill_geth
+    exit 1
+  fi
   ncontracts=$(python3 -c "import json; print(len(json.load(open('$contracts_file'))))")
-  log "  [phase2] contracts.json written: $contracts_file ($ncontracts getters; sample $sample ok, ${code_len} bytes)"
+  naccounts=$(python3 -c "import json; print(len(json.load(open('$accounts_file'))))")
+  log "  [phase2] both sets written: $ncontracts getters + $naccounts empty accounts"
 
   # Graceful geth shutdown to flush PathDB journal
   kill_geth
@@ -313,5 +357,12 @@ if [ -f "$RESULTS_DIR/ubt/contracts.json" ] && [ -f "$RESULTS_DIR/pbt/contracts.
     log "  OK: ubt and pbt contracts.json are identical"
   else
     log "  WARN: ubt and pbt contracts.json DIFFER — comparison will not be apples-to-apples"
+  fi
+fi
+if [ -f "$RESULTS_DIR/ubt/accounts.json" ] && [ -f "$RESULTS_DIR/pbt/accounts.json" ]; then
+  if diff -q "$RESULTS_DIR/ubt/accounts.json" "$RESULTS_DIR/pbt/accounts.json" >/dev/null; then
+    log "  OK: ubt and pbt accounts.json are identical"
+  else
+    log "  WARN: ubt and pbt accounts.json DIFFER — account benchmarks would diverge"
   fi
 fi
