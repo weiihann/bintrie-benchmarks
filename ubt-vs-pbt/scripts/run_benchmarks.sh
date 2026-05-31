@@ -26,16 +26,17 @@ DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
 NUM_RUNS="${NUM_RUNS:-1}"
 GROUP_DEPTH="${GROUP_DEPTH:-5}"
 COLD_CACHE="${COLD_CACHE:-0}"
-# Total gas per benchmark invocation, in millions. Set to one transaction's
-# worth (~16M, the Osaka per-tx cap) so each invocation is a single tx in a
-# single block — identical block structure across configs, no packing
-# asymmetry. Each (benchmark, run) is then one cold 1-tx block.
-GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-16}"
-# The scattered sweep interleaves across all deployed contracts inside the EVM
-# (attack contract walks a calldata address table), so there is no harness-side
-# visit schedule — each (benchmark, run) is one invocation that sweeps every
-# contract. The access sequence is a pure function of the contract set, identical
-# across configs.
+# Total gas per benchmark invocation, in millions. T_TOUCHES=256 stem fetches
+# at ~22 k gas each ≈ ~6 M; this fits one tx (Osaka cap ≈ 16.7 M) in a 20 M-gas
+# block, so each invocation is one cold 1-tx block — apples-to-apples Mgas/s.
+GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-6}"
+# K-sweep values per zone. Storage cells use 4 K values; account cells use 2.
+K_VALUES_STORAGE="${K_VALUES_STORAGE:-1 10 100 256}"
+K_VALUES_ACCOUNT="${K_VALUES_ACCOUNT:-10 256}"
+# The locality sweep interleaves K contracts × T/K stems each inside the EVM
+# (attack walks a calldata address+sequence table), so there is no harness-side
+# visit schedule — each (benchmark, K, run) is one invocation. The access
+# sequence is a pure function of (T, K, target set), identical across configs.
 
 SEED_ACCOUNT="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 SEED_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -50,24 +51,37 @@ CONFIGS=(
   "pbt|$GETH_PBT_BIN"
 )
 
-# Benchmark name | execution-specs test path
+# Benchmark name | execution-specs test path | stub source | K values
 declare -a BENCH_NAMES=()
 declare -a BENCH_TESTS=()
-DEFAULT_BENCHMARKS="scattered_sload scattered_sstore scattered_mixed"
+declare -a BENCH_STUB_SOURCES=()   # "contracts" or "accounts"
+declare -a BENCH_K_LISTS=()        # space-separated K values per bench
+DEFAULT_BENCHMARKS="storage_sload storage_sstore storage_mixed account_balance_read account_transfer"
 read -ra _BENCH_OVERRIDES <<< "${BENCHMARKS:-$DEFAULT_BENCHMARKS}"
 for name in "${_BENCH_OVERRIDES[@]}"; do
   case "$name" in
-    scattered_sload)
-      BENCH_NAMES+=("scattered_sload")
-      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_scattered_storage.py::test_scattered_sload") ;;
-    scattered_sstore)
-      BENCH_NAMES+=("scattered_sstore")
-      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_scattered_storage.py::test_scattered_sstore") ;;
-    scattered_mixed)
-      BENCH_NAMES+=("scattered_mixed")
-      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_scattered_storage.py::test_scattered_mixed") ;;
+    storage_sload)
+      BENCH_NAMES+=("storage_sload"); BENCH_STUB_SOURCES+=("contracts")
+      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_locality_sweep.py::test_storage_sload")
+      BENCH_K_LISTS+=("$K_VALUES_STORAGE") ;;
+    storage_sstore)
+      BENCH_NAMES+=("storage_sstore"); BENCH_STUB_SOURCES+=("contracts")
+      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_locality_sweep.py::test_storage_sstore")
+      BENCH_K_LISTS+=("$K_VALUES_STORAGE") ;;
+    storage_mixed)
+      BENCH_NAMES+=("storage_mixed"); BENCH_STUB_SOURCES+=("contracts")
+      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_locality_sweep.py::test_storage_mixed")
+      BENCH_K_LISTS+=("$K_VALUES_STORAGE") ;;
+    account_balance_read)
+      BENCH_NAMES+=("account_balance_read"); BENCH_STUB_SOURCES+=("accounts")
+      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_account_locality.py::test_account_balance_read")
+      BENCH_K_LISTS+=("$K_VALUES_ACCOUNT") ;;
+    account_transfer)
+      BENCH_NAMES+=("account_transfer"); BENCH_STUB_SOURCES+=("accounts")
+      BENCH_TESTS+=("tests/benchmark/stateful/bloatnet/test_account_locality.py::test_account_transfer")
+      BENCH_K_LISTS+=("$K_VALUES_ACCOUNT") ;;
     *)
-      echo "ERROR: unknown benchmark '$name' (valid: scattered_sload scattered_sstore scattered_mixed)" >&2
+      echo "ERROR: unknown benchmark '$name' (valid: storage_{sload,sstore,mixed}, account_{balance_read,transfer})" >&2
       exit 1 ;;
   esac
 done
@@ -147,15 +161,15 @@ start_geth_for_bench() {
     cache_flag=(--cache 4096)
   fi
 
-  # One tx per block: the dev block gas limit (20M) fits exactly one benchmark
-  # transaction (Osaka caps a tx at ~16.7M gas), so both configs produce
+  # One tx per block: the dev block gas limit (20M) caps to one benchmark tx
+  # (the test builds one ~6M-gas tx per invocation), so both configs produce
   # identical 1-tx blocks of equal gas — no block-packing asymmetry, throughput
-  # is apples-to-apples (mirrors the mpt-vs-bintrie methodology). dev.period 10
-  # gives each cold tx ample time to be the sole occupant of its block.
-  log "  [geth] Starting ($config_id, gd=$GROUP_DEPTH, cold=$COLD_CACHE, dev.period=10, 1tx/block)"
+  # is apples-to-apples (mirrors the mpt-vs-bintrie methodology). dev.period 1
+  # seals as soon as the tx is in the mempool — no idle wait.
+  log "  [geth] Starting ($config_id, gd=$GROUP_DEPTH, cold=$COLD_CACHE, dev.period=1, 1tx/block)"
   "$geth_bin" \
     --datadir "$datadir" \
-    --dev --dev.period 10 --dev.gaslimit 20000000 \
+    --dev --dev.period 1 --dev.gaslimit 20000000 \
     --miner.etherbase "$SEED_ACCOUNT" \
     "${cache_flag[@]}" \
     --debug.logslowblock=0 \
@@ -199,7 +213,7 @@ start_geth_for_bench() {
 # =============================================================================
 log "╔══════════════════════════════════════════════════════════════════╗"
 log "║  run_benchmarks.sh"
-log "║  ${#BENCH_NAMES[@]} benchmarks × $NUM_RUNS runs × ${#CONFIGS[@]} configs (scattered: 1 invocation/run sweeps all contracts)"
+log "║  ${#BENCH_NAMES[@]} benchmarks × variable K-list × $NUM_RUNS runs × ${#CONFIGS[@]} configs"
 log "║  COLD_CACHE=$COLD_CACHE  GROUP_DEPTH=$GROUP_DEPTH"
 log "╚══════════════════════════════════════════════════════════════════╝"
 
@@ -217,6 +231,7 @@ for spec in "${CONFIGS[@]}"; do
   IFS='|' read -r name geth_bin <<< "$spec"
   db_path="$DB_BASE/$name"
   contracts="$RESULTS_DIR/$name/contracts.json"
+  accounts="$RESULTS_DIR/$name/accounts.json"
   if [ ! -x "$geth_bin" ]; then
     log "  FAIL: geth binary missing: $geth_bin (config=$name)"
     ALL_OK=false
@@ -227,6 +242,10 @@ for spec in "${CONFIGS[@]}"; do
   fi
   if [ ! -f "$contracts" ]; then
     log "  FAIL: contracts.json missing: $contracts (config=$name) — run generate_dbs.sh first"
+    ALL_OK=false
+  fi
+  if [ ! -f "$accounts" ]; then
+    log "  FAIL: accounts.json missing: $accounts (config=$name) — run generate_dbs.sh first"
     ALL_OK=false
   fi
   log "  $name: ok"
@@ -255,15 +274,17 @@ fi
 # =============================================================================
 STUBS_FILE="$EXEC_SPECS/tests/benchmark/stateful/bloatnet/stubs_bloatnet.json"
 
-# write_stub_file <contracts_json>: expose every deployed ERC20 under a
-# scattered_target_<i> label so the sweep test loads them all into its calldata
-# address table.
+# write_stub_file <addr_json> <prefix>: expose every address from the given JSON
+# array under the stub labels "<prefix>_<i>", so the test's address_stubs lookup
+# resolves them to the pre-deployed addresses.
 write_stub_file() {
-  local contracts="$1"
-  python3 - "$contracts" "$STUBS_FILE" <<'PY'
+  local addr_json="$1"
+  local prefix="$2"
+  python3 - "$addr_json" "$STUBS_FILE" "$prefix" <<'PY'
 import json, sys
 addrs = json.load(open(sys.argv[1]))
-stubs = {f"scattered_target_{i}": {"addr": a} for i, a in enumerate(addrs)}
+prefix = sys.argv[3]
+stubs = {f"{prefix}_{i}": {"addr": a} for i, a in enumerate(addrs)}
 json.dump(stubs, open(sys.argv[2], "w"), indent=2)
 PY
 }
@@ -279,59 +300,74 @@ for spec in "${CONFIGS[@]}"; do
   log "║  CONFIG: $name"
   log "╚══════════════════════════════════════════════════════════════════╝"
 
-  # The scattered sweep interleaves across contracts inside the EVM, so each
-  # (benchmark, run) is a SINGLE invocation that sweeps all contracts. Expose
-  # every deployed ERC20 to the test as a stub (its calldata address table).
-  NCONTRACTS=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$contracts_file")
-  write_stub_file "$contracts_file"
-  log "  $NCONTRACTS contracts — scattered sweep (one invocation per benchmark per run)"
-
-  # Clear old per-run logs for idempotency
-  for bench_name in "${BENCH_NAMES[@]}"; do
-    for run in $(seq 1 "$NUM_RUNS"); do
-      rm -f "$cfg_dir/${bench_name}_run${run}_geth.log" "$cfg_dir/${bench_name}_run${run}_test.log"
-    done
-  done
   rm -rf "$cfg_dir/csv"
 
   for bench_idx in "${!BENCH_NAMES[@]}"; do
     bench_name="${BENCH_NAMES[$bench_idx]}"
     bench_test="${BENCH_TESTS[$bench_idx]}"
+    stub_source="${BENCH_STUB_SOURCES[$bench_idx]}"
+    k_list="${BENCH_K_LISTS[$bench_idx]}"
 
-    log ""
-    log "  ── BENCHMARK: $bench_name"
+    # Pick the right address source + stub prefix for this benchmark.
+    # test_locality_sweep.py reads "scattered_target_<i>"; test_account_locality.py
+    # reads "account_target_<i>".
+    if [ "$stub_source" = "contracts" ]; then
+      addr_json="$cfg_dir/contracts.json"
+      stub_prefix="scattered_target"
+    else
+      addr_json="$cfg_dir/accounts.json"
+      stub_prefix="account_target"
+    fi
 
-    for run in $(seq 1 "$NUM_RUNS"); do
-      stem="${bench_name}_run${run}"
-      # Per-run write offset: each run's writes start at a fresh, never-used slot
-      # range (stride 100M >> ops/run), so SSTOREs are cold inserts, not warm
-      # re-writes. Identical across configs (same run number) → same-state holds.
-      export SCATTERED_WRITE_OFFSET=$((run * 100000000))
+    if [ ! -f "$addr_json" ]; then
+      log "  ERROR: $addr_json missing for $bench_name — re-run generate_dbs.sh"
+      exit 1
+    fi
+    NCONTRACTS=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$addr_json")
+    write_stub_file "$addr_json" "$stub_prefix"
+
+    for K in $k_list; do
       log ""
-      log "  --- $bench_name run $run/$NUM_RUNS ($name) sweeping $NCONTRACTS contracts (write-offset=$SCATTERED_WRITE_OFFSET) ---"
+      log "  ── BENCHMARK: ${bench_name}_k${K} (pool=${NCONTRACTS} ${stub_source}; effective K=$K)"
 
-      start_geth_for_bench "$geth_bin" "$db_path" "$name" "$cfg_dir/geth_current.log"
+      # Clear stale per-cell logs for idempotency
+      for run in $(seq 1 "$NUM_RUNS"); do
+        rm -f "$cfg_dir/${bench_name}_k${K}_run${run}_geth.log" \
+              "$cfg_dir/${bench_name}_k${K}_run${run}_test.log"
+      done
 
-      log "  [bench] Running execute remote..."
-      cd "$EXEC_SPECS"
-      set +e
-      "$UV" run execute remote \
-        --fork Osaka \
-        --tx-wait-timeout 600 \
-        --gas-benchmark-values "$GAS_BENCHMARK_VALUE" \
-        --address-stubs "$STUBS_FILE" \
-        "$bench_test" \
-        -v > "$cfg_dir/${stem}_test.log" 2>&1
-      test_exit=$?
-      set -e
+      for run in $(seq 1 "$NUM_RUNS"); do
+        stem="${bench_name}_k${K}_run${run}"
+        # Per-run write offset: each run's writes start at a fresh, never-used slot
+        # range (stride 100M >> ops/run), so SSTOREs are cold inserts, not warm
+        # re-writes. Identical across configs (same run number) → same-state holds.
+        export SCATTERED_WRITE_OFFSET=$((run * 100000000))
+        export LOCALITY_K="$K"
+        log ""
+        log "  --- $stem ($name) write-offset=$SCATTERED_WRITE_OFFSET K=$K ---"
 
-      # Save geth log for extract_csv.py
-      cp "$cfg_dir/geth_current.log" "$cfg_dir/${stem}_geth.log"
+        start_geth_for_bench "$geth_bin" "$db_path" "$name" "$cfg_dir/geth_current.log"
 
-      passed=$(grep -c " PASSED" "$cfg_dir/${stem}_test.log" 2>/dev/null || echo "0")
-      failed=$(grep -c " FAILED" "$cfg_dir/${stem}_test.log" 2>/dev/null || echo "0")
-      errors=$(grep -c "missing trie node" "$cfg_dir/${stem}_geth.log" 2>/dev/null || echo "0")
-      log "  [bench] exit=$test_exit passed=$passed failed=$failed missing_trie_node=$errors"
+        log "  [bench] Running execute remote..."
+        cd "$EXEC_SPECS"
+        set +e
+        "$UV" run execute remote \
+          --fork Osaka \
+          --tx-wait-timeout 600 \
+          --gas-benchmark-values "$GAS_BENCHMARK_VALUE" \
+          --address-stubs "$STUBS_FILE" \
+          "$bench_test" \
+          -v > "$cfg_dir/${stem}_test.log" 2>&1
+        test_exit=$?
+        set -e
+
+        cp "$cfg_dir/geth_current.log" "$cfg_dir/${stem}_geth.log"
+
+        passed=$(grep -c " PASSED" "$cfg_dir/${stem}_test.log" 2>/dev/null || echo "0")
+        failed=$(grep -c " FAILED" "$cfg_dir/${stem}_test.log" 2>/dev/null || echo "0")
+        errors=$(grep -c "missing trie node" "$cfg_dir/${stem}_geth.log" 2>/dev/null || echo "0")
+        log "  [bench] exit=$test_exit passed=$passed failed=$failed missing_trie_node=$errors"
+      done
     done
   done
 
