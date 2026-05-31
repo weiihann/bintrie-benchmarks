@@ -64,9 +64,17 @@ def test_getter_initcode_256_pre_populates_at_byte_level():
     assert code[5:11] == bytes.fromhex("600161010055")
 
 
-def test_empty_account_initcode_is_tiny():
-    """Empty-account: deploys 0-byte runtime so target exists in basic-data with no code."""
+def test_empty_account_initcode_is_tiny_stop_runtime():
+    """Empty-account: deploys a 1-byte STOP runtime so the execute-specs
+    address-stubs validator (which rejects 0-byte code) accepts the target."""
     code = build_empty_account_initcode()
-    # PUSH1 0 ; PUSH1 0 ; RETURN  →  5 bytes
-    assert code == bytes.fromhex("60006000f3")
-    assert len(code) == 5
+    # Prelude (12B) + runtime STOP (1B) = 13 bytes total.
+    expected = bytes.fromhex("6001600c600039600160006000f3").replace(
+        bytes.fromhex("6000f3"), bytes.fromhex("00f3")
+    )
+    # Simpler explicit form:
+    expected = bytes.fromhex("6001600c60003960016000f3" "00")
+    assert code == expected, code.hex()
+    assert len(code) == 13
+    # Runtime byte (offset 12) is STOP.
+    assert code[12] == 0x00

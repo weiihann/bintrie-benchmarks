@@ -77,9 +77,28 @@ def build_getter_initcode(num_stems: int) -> bytes:
 
 
 def build_empty_account_initcode() -> bytes:
-    """Constructor: returns 0-byte runtime. RESULT: account exists in basic-data, no code."""
-    # PUSH1 0 (size) ; PUSH1 0 (offset) ; RETURN
-    return bytes([0x60, 0x00, 0x60, 0x00, 0xF3])
+    """Constructor: returns a 1-byte STOP runtime.
+
+    A truly 0-byte runtime would trip execution-specs' address-stubs validator
+    (it queries eth_getCode and refuses stubs without code unless they're EOAs).
+    1 byte of STOP keeps the account "minimal" — BALANCE never invokes code, and
+    a CALL with value=1 only adds one code-chunk read per recipient, which both
+    UBT and PBT pay equally.
+    """
+    # Layout: [prelude 12B][runtime 1B]
+    # prelude: PUSH1 1 (size) ; PUSH1 12 (runtime offset) ; PUSH1 0 (dest) ;
+    #          CODECOPY ; PUSH1 1 ; PUSH1 0 ; RETURN
+    # runtime: STOP (0x00)
+    return bytes([
+        0x60, 0x01,  # PUSH1 1 (runtime size)
+        0x60, 0x0C,  # PUSH1 12 (runtime offset)
+        0x60, 0x00,  # PUSH1 0 (dest)
+        0x39,        # CODECOPY
+        0x60, 0x01,  # PUSH1 1 (return size)
+        0x60, 0x00,  # PUSH1 0 (return offset)
+        0xF3,        # RETURN
+        0x00,        # runtime: STOP
+    ])
 
 
 if __name__ == "__main__":

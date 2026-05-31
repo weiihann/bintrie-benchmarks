@@ -33,6 +33,25 @@ BENCHMARKS = [
     "scattered_mixed",
 ]
 
+# Locality-sweep cells use names like `storage_sload_k10`, `account_transfer_k256`.
+# We auto-discover any benchmark with at least one `<bench>_run<n>_geth.log` log
+# in the results dir so adding/removing cells doesn't require editing this file.
+_LOG_NAME_RE = re.compile(r"^(?P<bench>.+?)_run\d+(?:_c\d+)?(?:_v\d+)?_geth\.log$")
+
+
+def _discover_benchmarks(results_dir):
+    """Return the list of benchmark names that have at least one geth log present."""
+    discovered = set()
+    for p in results_dir.glob("*_geth.log"):
+        m = _LOG_NAME_RE.match(p.name)
+        if m:
+            discovered.add(m.group("bench"))
+    # Stable order: known names first (preserve historical ordering), then any
+    # newly-discovered names alphabetically.
+    ordered = [b for b in BENCHMARKS if b in discovered]
+    ordered += sorted(b for b in discovered if b not in BENCHMARKS)
+    return ordered
+
 # CSV columns — config metadata prepended to block-level data.
 # "contract" is the contract index for multi-contract runs (ubt-vs-pbt); it is
 # empty for single-contract logs (group-depth-benchmarks naming).
@@ -214,7 +233,10 @@ def extract_config(args):
     cache_rows = []
     all_block_rows = []
 
-    for bench in BENCHMARKS:
+    benchmarks_to_extract = _discover_benchmarks(results_dir)
+    print(f"  Discovered {len(benchmarks_to_extract)} benchmarks: {benchmarks_to_extract}")
+
+    for bench in benchmarks_to_extract:
         block_rows = []
         print(f"\n--- {bench} ---")
 
@@ -283,7 +305,7 @@ def extract_config(args):
     print("\n" + "=" * 80)
     print("  CACHE VALIDATION SUMMARY")
     print("=" * 80)
-    for bench in BENCHMARKS:
+    for bench in benchmarks_to_extract:
         bench_rows = [r for r in cache_rows if r["benchmark"] == bench]
         if not bench_rows:
             continue

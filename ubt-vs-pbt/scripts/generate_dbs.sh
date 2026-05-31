@@ -42,6 +42,11 @@ NUM_STEMS="${NUM_STEMS:-256}"
 # bytecode and the per-stem SSTORE count stay in lockstep.
 GETTER_INITCODE=$(python3 "$CAMPAIGN_DIR/scripts/build_initcode.py" getter "$NUM_STEMS")
 ACCOUNT_INITCODE=$(python3 "$CAMPAIGN_DIR/scripts/build_initcode.py" empty)
+# spamoor factorydeploytx default --gaslimit is 4M, which underfunds the
+# getter constructor at NUM_STEMS≥256 (~5.7M needed). Size both deploys for
+# the worst case + headroom; empty-account deploy stays well under either way.
+GETTER_DEPLOY_GAS="${GETTER_DEPLOY_GAS:-$(( NUM_STEMS * 23000 + 200000 ))}"
+ACCOUNT_DEPLOY_GAS="${ACCOUNT_DEPLOY_GAS:-200000}"
 
 # state-actor direct scaling flags (opt-in; only passed when set).
 # Without these, state-actor falls back to its defaults (1000 accounts /
@@ -257,13 +262,14 @@ for spec in "${CONFIGS[@]}"; do
   # accepts [slot,value,isWrite]; its constructor pre-populates NUM_STEMS stems
   # (slot=stem_idx*256 ← 1) so cold SLOADs always hit populated slots.
   getter_log="$config_results/factorydeploy_getter.log"
-  log "  [phase2] Deploying $NUM_CONTRACTS getter contracts (NUM_STEMS=$NUM_STEMS pre-populated stems)"
+  log "  [phase2] Deploying $NUM_CONTRACTS getter contracts (NUM_STEMS=$NUM_STEMS pre-populated stems, gas=$GETTER_DEPLOY_GAS)"
   "$SPAMOOR_BIN" factorydeploytx \
     --rpchost="http://localhost:8545" \
     --privkey="$PRIVKEY" \
     --count="$NUM_CONTRACTS" \
     --init-code="$GETTER_INITCODE" \
     --start-salt=0 \
+    --gaslimit="$GETTER_DEPLOY_GAS" \
     -v > "$getter_log" 2>&1
 
   FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$getter_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
@@ -297,13 +303,14 @@ for spec in "${CONFIGS[@]}"; do
   # getter address set.
   account_log="$config_results/factorydeploy_account.log"
   ACCOUNT_START_SALT="$NUM_CONTRACTS"
-  log "  [phase2] Deploying $NUM_CONTRACTS empty-code accounts (start salt=$ACCOUNT_START_SALT)"
+  log "  [phase2] Deploying $NUM_CONTRACTS empty-code accounts (start salt=$ACCOUNT_START_SALT, gas=$ACCOUNT_DEPLOY_GAS)"
   "$SPAMOOR_BIN" factorydeploytx \
     --rpchost="http://localhost:8545" \
     --privkey="$PRIVKEY" \
     --count="$NUM_CONTRACTS" \
     --init-code="$ACCOUNT_INITCODE" \
     --start-salt="$ACCOUNT_START_SALT" \
+    --gaslimit="$ACCOUNT_DEPLOY_GAS" \
     -v > "$account_log" 2>&1
 
   ACCOUNT_FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$account_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
@@ -319,12 +326,15 @@ for spec in "${CONFIGS[@]}"; do
     2>&1 | tee -a "$account_log"
 
   sample_account=$(python3 -c "import json; print(json.load(open('$accounts_file'))[0])")
-  # Empty-account: code length should be EXACTLY 0 (contract exists, has no code).
+  # Empty-account: code length should be EXACTLY 1 byte (a single STOP). 1 byte is
+  # the minimum that satisfies execution-specs' address-stubs validator (which
+  # rejects zero-code stubs unless they're EOAs); a STOP runtime adds at most one
+  # code-chunk read per CALL — equally paid by UBT and PBT.
   acode_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
     -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$sample_account\",\"latest\"],\"id\":1}" \
     | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
-  if [ "$acode_len" -ne 0 ] 2>/dev/null; then
-    log "    ERROR: sample account $sample_account has ${acode_len}B code (expected 0)"
+  if [ "$acode_len" -ne 1 ] 2>/dev/null; then
+    log "    ERROR: sample account $sample_account has ${acode_len}B code (expected 1)"
     kill_geth
     exit 1
   fi
