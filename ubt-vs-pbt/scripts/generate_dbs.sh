@@ -5,7 +5,7 @@ set -euo pipefail
 # Generate binary trie DBs for ubt and pbt configs.
 #
 # Phase 1: state-actor produces $TARGET_SIZE DBs (deterministic seed).
-# Phase 2: For each DB: start geth → spamoor erc20_bloater → stubs.json → stop.
+# Phase 2: For each DB: start geth → factorydeploytx (CREATE2 getters) → contracts.json → stop.
 #
 # Both configs share state-actor seed and spamoor seed so the EVM-level
 # workload is byte-identical. Only the trie representation differs.
@@ -28,12 +28,14 @@ DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
 TARGET_SIZE="${TARGET_SIZE:-1GB}"
 GROUP_DEPTH="${GROUP_DEPTH:-5}"
 STATE_ACTOR_SEED="${STATE_ACTOR_SEED:-25519}"
-SPAMOOR_SEED="${SPAMOOR_SEED:-ubt-vs-pbt-smoke}"
-SPAMOOR_TARGET_GB="${SPAMOOR_TARGET_GB:-0.1}"
-# Number of ERC20 contracts to deploy and bloat. The total SPAMOOR_TARGET_GB is
-# split evenly across them; each gets its own deterministic deployer seed
-# (${SPAMOOR_SEED}-cN), so the resulting addresses are identical across configs.
+UV="${UV:-$(command -v uv 2>/dev/null || echo uv)}"
+# Number of scattered target (getter) contracts to deploy via the CREATE2
+# factory. Addresses are deterministic (salts 0..N-1), identical across configs.
 NUM_CONTRACTS="${NUM_CONTRACTS:-10}"
+# Init code of the getter contract the factory CREATE2-deploys. Runtime: on call
+# with calldata [slot,value,isWrite], SSTORE(slot,value) if isWrite else
+# POP(SLOAD(slot)); constructor SSTOREs slot 0 (a populated cold read target).
+GETTER_INITCODE="${GETTER_INITCODE:-0x600160005561001c60008160108239f3604035600d5801576000355450600b5801565b602035600035555b00}"
 
 # state-actor direct scaling flags (opt-in; only passed when set).
 # Without these, state-actor falls back to its defaults (1000 accounts /
@@ -242,62 +244,53 @@ for spec in "${CONFIGS[@]}"; do
     exit 1
   fi
 
-  # Deploy + bloat NUM_CONTRACTS ERC20 contracts. Each spamoor invocation uses a
-  # distinct deployer seed (${SPAMOOR_SEED}-cN) → distinct deployer wallet →
-  # distinct contract, carrying SPAMOOR_TARGET_GB / NUM_CONTRACTS of the bloat.
-  # All run sequentially against this one running geth. The deployer address
-  # depends only on (privkey, seed), not the trie backend, so contract N lands
-  # at the same address under both configs.
-  per_contract_gb=$(python3 -c "print($SPAMOOR_TARGET_GB / $NUM_CONTRACTS)")
-  log "  [phase2] Deploying $NUM_CONTRACTS contract(s), ${per_contract_gb}GB each (total ${SPAMOOR_TARGET_GB}GB)"
-  declare -a contract_addrs=()
-  for c in $(seq 1 "$NUM_CONTRACTS"); do
-    c_seed="${SPAMOOR_SEED}-c${c}"
-    c_log="$config_results/spamoor_c${c}.log"
-    log "    [contract $c/$NUM_CONTRACTS] erc20_bloater (target=${per_contract_gb}GB seed=$c_seed)..."
-    "$SPAMOOR_BIN" erc20_bloater \
-      --rpchost="http://localhost:8545" \
-      --privkey="$PRIVKEY" \
-      --seed="$c_seed" \
-      --target-gb="$per_contract_gb" \
-      --target-gas-ratio=0.8 \
-      --wallet-count=200 \
-      -v > "$c_log" 2>&1
+  # Deploy NUM_CONTRACTS tiny getter contracts via spamoor's CREATE2 factory.
+  # Each getter, on call, does SLOAD/SSTORE (calldata [slot,value,isWrite]) and
+  # its constructor SSTOREs slot 0 (a populated cold read target). CREATE2 with
+  # sequential salts 0..N-1 makes addresses deterministic and identical across
+  # configs (same well-known factory + same init code), so the scattered sweep
+  # touches a different contract each op. This deploys thousands in minutes
+  # (no per-contract wallet distribution, unlike erc20_bloater).
+  deploy_log="$config_results/factorydeploy.log"
+  log "  [phase2] Deploying $NUM_CONTRACTS getter contracts via factorydeploytx (CREATE2)"
+  "$SPAMOOR_BIN" factorydeploytx \
+    --rpchost="http://localhost:8545" \
+    --privkey="$PRIVKEY" \
+    --count="$NUM_CONTRACTS" \
+    --init-code="$GETTER_INITCODE" \
+    --start-salt=0 \
+    -v > "$deploy_log" 2>&1
 
-    addr=$(grep -oE 'contract: 0x[0-9a-fA-F]+' "$c_log" | tail -1 | awk '{print $2}')
-    if [ -z "$addr" ]; then
-      log "    ERROR: could not extract contract address (contract $c)"
-      tail -20 "$c_log"
-      kill_geth
-      exit 1
-    fi
+  FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$deploy_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
+  if [ -z "$FACTORY" ]; then
+    log "    ERROR: could not extract CREATE2 factory address"
+    tail -20 "$deploy_log"
+    kill_geth
+    exit 1
+  fi
+  log "    factory=$FACTORY — computing $NUM_CONTRACTS CREATE2 addresses"
 
-    code_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
-      -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$addr\",\"latest\"],\"id\":1}" \
-      | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
-    if [ "$code_len" -eq 0 ] 2>/dev/null; then
-      log "    ERROR: contract $c ($addr) has no code"
-      kill_geth
-      exit 1
-    fi
-    log "    [contract $c/$NUM_CONTRACTS] deployed at $addr (${code_len} bytes)"
-    contract_addrs+=("$addr")
-  done
+  # Recompute the deterministic CREATE2 addresses and write contracts.json.
+  "$UV" run --with "eth-hash[pycryptodome]" python \
+    "$CAMPAIGN_DIR/scripts/compute_create2_addresses.py" \
+    "$FACTORY" "$GETTER_INITCODE" "$NUM_CONTRACTS" "$contracts_file" 2>&1 | tee -a "$deploy_log"
 
-  # Write contracts.json — a JSON array of the N deployed addresses. The
-  # benchmark phase selects among these in a fixed seeded order; the stub file
-  # execution-specs consumes is built per-contract at benchmark time.
-  python3 - "$contracts_file" "${contract_addrs[@]}" <<'PY'
-import json, sys
-out, addrs = sys.argv[1], sys.argv[2:]
-with open(out, "w") as f:
-    json.dump(addrs, f, indent=2)
-PY
-  log "  [phase2] contracts.json written: $contracts_file (${#contract_addrs[@]} contracts)"
+  # Verify the first computed getter actually carries code on-chain.
+  sample=$(python3 -c "import json; print(json.load(open('$contracts_file'))[0])")
+  code_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$sample\",\"latest\"],\"id\":1}" \
+    | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
+  if [ "$code_len" -eq 0 ] 2>/dev/null; then
+    log "    ERROR: sample getter $sample has no code (deploy/address mismatch)"
+    kill_geth
+    exit 1
+  fi
+  ncontracts=$(python3 -c "import json; print(len(json.load(open('$contracts_file'))))")
+  log "  [phase2] contracts.json written: $contracts_file ($ncontracts getters; sample $sample ok, ${code_len} bytes)"
 
   # Graceful geth shutdown to flush PathDB journal
   kill_geth
-  log "  [done] $name DB + ERC20 ready"
+  log "  [done] $name DB + getters ready"
 done
 
 log ""
