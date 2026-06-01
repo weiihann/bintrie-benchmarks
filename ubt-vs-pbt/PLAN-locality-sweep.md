@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Run the 16-cell K-sweep campaign (storage_{sload,sstore,mixed} × K∈{1,10,100,256} plus account_{balance_read,transfer} × K∈{10,256}) and produce a `ratio_vs_K` headline report comparing UBT and PBT.
+**Goal:** Run the K-sweep campaign and produce a `ratio_vs_K` headline report comparing UBT and PBT.
+
+**Scope (adjusted after Phase G smoke):** Storage-only, 12 cells (storage_{sload,sstore,mixed} × K∈{1,10,100,256}). The original 4-cell account sidecar was dropped because `account_transfer` hangs geth (one ~6 M-gas tx of `CALL(value=1)` loops pegs the EVM for 5+ min on both UBT and PBT — points at a flat-state path issue under value-transfer workloads, out of scope for this campaign). `account_balance_read` works but loses interpretive value without its sibling; `test_account_locality.py` stays in execution-specs for a future PR.
 
 **Architecture:** Parametrize the existing run_campaign / run_benchmarks scripts on `K`; emit one cell-tagged geth log per (benchmark, K, run). Reuse spamoor `factorydeploytx` for two deploy sets (256 getter contracts with pre-populated stems + 256 empty-code contracts for account-zone probing). Replace the single `test_scattered_storage.py` with `test_locality_sweep.py` + `test_account_locality.py`. Add a `ratio_vs_K` graph generator. Everything else (DB-gen, cache drop, sudo rule, extract_csv, analyze_data, same-state gate) reused as-is.
 

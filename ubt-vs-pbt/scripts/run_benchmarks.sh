@@ -56,7 +56,7 @@ declare -a BENCH_NAMES=()
 declare -a BENCH_TESTS=()
 declare -a BENCH_STUB_SOURCES=()   # "contracts" or "accounts"
 declare -a BENCH_K_LISTS=()        # space-separated K values per bench
-DEFAULT_BENCHMARKS="storage_sload storage_sstore storage_mixed account_balance_read account_transfer"
+DEFAULT_BENCHMARKS="storage_sload storage_sstore storage_mixed"
 read -ra _BENCH_OVERRIDES <<< "${BENCHMARKS:-$DEFAULT_BENCHMARKS}"
 for name in "${_BENCH_OVERRIDES[@]}"; do
   case "$name" in

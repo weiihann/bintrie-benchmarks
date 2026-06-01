@@ -37,9 +37,9 @@ export NUM_STEMS="${NUM_STEMS:-256}"
 export GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-6}"
 export GROUP_DEPTH="${GROUP_DEPTH:-5}"
 export COLD_CACHE="${COLD_CACHE:-0}"
-export BENCHMARKS="${BENCHMARKS:-storage_sload storage_sstore storage_mixed account_balance_read account_transfer}"
+export BENCHMARKS="${BENCHMARKS:-storage_sload storage_sstore storage_mixed}"
 export K_VALUES_STORAGE="${K_VALUES_STORAGE:-1 10 100 256}"
-export K_VALUES_ACCOUNT="${K_VALUES_ACCOUNT:-10 256}"
+export K_VALUES_ACCOUNT="${K_VALUES_ACCOUNT:-10 256}"  # only used if account_* benchmarks added back
 export RESULTS_DIR
 export DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
 
