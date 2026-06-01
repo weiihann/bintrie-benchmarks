@@ -5,16 +5,16 @@ Osaka --tx-wait-timeout 600 --gas-benchmark-values 6 --address-stubs
 /mnt/state_expiry_vol_data/execution-specs/tests/benchmark/stateful/bloatnet/stu
 bs_bloatnet.json 
 tests/benchmark/stateful/bloatnet/test_locality_sweep.py::test_storage_mixed -v
-2026-06-01 07:01:54 [[36mINFO[0m] ./packages/testing/src/execution_testing/rpc/rpc.py:341: Batch RPC: 768 responses received
-2026-06-01 07:01:54 [[36mINFO[0m] ./packages/testing/src/execution_testing/cli/pytest_commands/plugins/shared/execute_fill.py:91: Validated 256 address stubs: 256 contracts, 0 EOAs
-2026-06-01 07:01:54 [[36mINFO[0m] ./packages/testing/src/execution_testing/rpc/rpc.py:480: Requesting chainid of provided RPC endpoint..
+2026-06-01 13:41:26 [[36mINFO[0m] ./packages/testing/src/execution_testing/rpc/rpc.py:341: Batch RPC: 768 responses received
+2026-06-01 13:41:26 [[36mINFO[0m] ./packages/testing/src/execution_testing/cli/pytest_commands/plugins/shared/execute_fill.py:91: Validated 256 address stubs: 256 contracts, 0 EOAs
+2026-06-01 13:41:26 [[36mINFO[0m] ./packages/testing/src/execution_testing/rpc/rpc.py:480: Requesting chainid of provided RPC endpoint..
 ============================= test session starts ==============================
 platform linux -- Python 3.13.5, pytest-8.4.2, pluggy-1.6.0 -- /mnt/state_expiry_vol_data/execution-specs/.venv/bin/python3
-[1mStart seed for EOA: 0x5b3f34c63e5436f5cbac3e7009e0022bd94353b4c78b466319200b1b870676d8 [39;49m
+[1mStart seed for EOA: 0x7a8b13dfea9cea2bc22ba5a8e62dff8ef8766a08a13d244e4869ec3ffdfdde3d [39;49m
 [1mGenerating fixtures for: Osaka[39;49m
 [1m[93mOnly generating fixtures with stable/deployed forks: Specify an upcoming fork via --until=fork to add forks under development.[39;49m
 cachedir: .pytest_cache
-Log file: logs/execute-remote-20260601-070154-main.log
+Log file: logs/execute-remote-20260601-134126-main.log
 metadata: {'Python': '3.13.5', 'Platform': 'Linux-6.12.85+deb13-amd64-x86_64-with-glibc2.41', 'Packages': {'pytest': '8.4.2', 'pluggy': '1.6.0'}, 'Plugins': {'regex': '0.2.0', 'xdist': '3.8.0', 'json-report': '1.5.0', 'html': '4.1.1', 'custom-report': '1.0.1', 'cov': '4.1.0', 'metadata': '3.1.1'}, 'Command-line args': '<code>execute -c /mnt/state_expiry_vol_data/execution-specs/packages/testing/src/execution_testing/cli/pytest_commands/pytest_ini_files/pytest-execute.ini --rootdir . --fork Osaka --tx-wait-timeout 600 --gas-benchmark-values 6 --address-stubs /mnt/state_expiry_vol_data/execution-specs/tests/benchmark/stateful/bloatnet/stubs_bloatnet.json tests/benchmark/stateful/bloatnet/test_locality_sweep.py::test_storage_mixed -v</code>', 'Senders': {}}
 rootdir: /mnt/state_expiry_vol_data/execution-specs
 configfile: packages/testing/src/execution_testing/cli/pytest_commands/pytest_ini_files/pytest-execute.ini
@@ -30,5 +30,5 @@ tests/benchmark/stateful/bloatnet/test_locality_sweep.py::test_storage_mixed[for
     self.import_plugin(arg, consider_entry_points=True)
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-- Log file: /mnt/state_expiry_vol_data/execution-specs/logs/execute-remote-20260601-070154-main.log -
-========================= 1 passed, 1 warning in 3.66s =========================
+- Log file: /mnt/state_expiry_vol_data/execution-specs/logs/execute-remote-20260601-134126-main.log -
+========================= 1 passed, 1 warning in 4.67s =========================

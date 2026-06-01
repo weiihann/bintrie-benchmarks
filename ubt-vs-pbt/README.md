@@ -18,18 +18,32 @@ the implementation plan.
 
 ## Headline
 
-PBT loses on total throughput in all 12 cells measured (ratios 0.54×–0.97×).
-The mechanism decomposes into two opposing forces:
+PBT lands **at parity with UBT** (ratios 0.94–1.07×), modestly favored on
+high-clustering workloads. The original "PBT loses 0.54–0.97×" result was the
+product of two compounding methodology issues:
 
-- **PBT does reduce cold disk reads.** Prefix-region clustering means a contract's
-  stems share SSTable blocks → fewer Pebble seeks. PBT's `state_read_ms` is
-  lower in 11/12 cells, by up to 1.64× at SSTORE K=256.
-- **But PBT's `state_hash + commit` overhead dwarfs the savings.** Even pure-read
-  blocks pay ~15–20 ms of PBT-specific tax (vs UBT's ~3 ms), driven by the
-  zone-prefix bytes creating wider sparse paths near the root that must be
-  re-hashed on every commit.
+1. The PBT geth fork carries a `parallel zone updates` commit (`928668da0`)
+   that recursively deep-copies both halves of the trie on every block. Each
+   commit pays ~30–70 ms of `copyFrom` overhead for a parallelism gain that
+   almost never materializes (zone activity is heavily skewed in practice).
+2. Geth was started with `--cache 0`, disabling Pebble's block cache and
+   suppressing the within-block read locality PBT is designed to exploit.
 
-Net at 75 GB / 6 M-gas blocks: tax exceeds savings by 2–4× in every cell.
+After disabling the parallel-zone code (one-line patch forcing the existing
+sequential fallback) and using Pebble's default cache while still dropping
+OS page cache between runs:
+
+| benchmark | K=1 | K=10 | K=100 | K=256 |
+|---|---:|---:|---:|---:|
+| SLOAD  | 0.99× | 0.99× | 1.01× | 1.02× |
+| SSTORE | **1.07×** | **1.07×** | 1.02× | 0.94× |
+| mixed  | **1.05×** | 0.99× | **1.05×** | 1.00× |
+
+(PBT-noparallel / UBT throughput. Same-state: 0/480. Block-shape: 480/480.)
+PBT wins on workloads with high per-contract clustering (low K) and slightly
+loses at full scatter (K=256). The mechanism is visible in the per-block
+timing decomposition (see [index.html](index.html)): clustering reduces both
+`state_read_ms` (4–8 ms at high K) and `state_hash_ms` (3 ms at low K).
 
 ## What this benchmark probes
 

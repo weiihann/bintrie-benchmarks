@@ -153,10 +153,15 @@ start_geth_for_bench() {
   echo "" | "$geth_bin" --datadir "$datadir" account import --password /dev/stdin /tmp/seed_key.hex 2>/dev/null || true
   rm -f /tmp/seed_key.hex
 
-  # cold-cache mode: --cache=0 disables pebble cache. Hot mode: leave default.
+  # Cache configuration: OS page cache drop between runs (sysctl drop_caches=3
+  # in drop_caches()) gives us cold inter-run state; within a block we let
+  # Pebble use its default block cache so consecutive reads of nearby keys
+  # (PBT clustering) can hit the cache instead of going to disk for every fetch.
+  # This is the realistic production geth setup. To force fully-cold within-block
+  # reads (Pebble cache disabled), pass --cache 0 manually.
   local cache_flag=()
   if [ "$COLD_CACHE" = "1" ]; then
-    cache_flag=(--cache 0)
+    cache_flag=()                # let geth pick default
   else
     cache_flag=(--cache 4096)
   fi
@@ -341,7 +346,13 @@ for spec in "${CONFIGS[@]}"; do
         # Per-run write offset: each run's writes start at a fresh, never-used slot
         # range (stride 100M >> ops/run), so SSTOREs are cold inserts, not warm
         # re-writes. Identical across configs (same run number) → same-state holds.
-        export SCATTERED_WRITE_OFFSET=$((run * 100000000))
+        # TEMPORARY (Phase O rerun, 2026-06-01): shifted by +200 to write into
+        # slot ranges never touched by the prior campaigns on this DB
+        # (original 100M..2B; Phase L rerun 10.1G..12G). Every SSTORE is
+        # cold-init at fresh slot range 20.1G..22G.
+        # REVERT to `run * 100000000` before any future campaign that builds
+        # fresh DBs.
+        export SCATTERED_WRITE_OFFSET=$(( (run + 200) * 100000000 ))
         export LOCALITY_K="$K"
         log ""
         log "  --- $stem ($name) write-offset=$SCATTERED_WRITE_OFFSET K=$K ---"

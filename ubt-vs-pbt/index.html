@@ -43,6 +43,7 @@
   figcaption { font-size:13px; color:#94A3B8; margin-top:8px; text-align:center; font-family:'IBM Plex Mono',monospace; }
   ul { margin:0 0 16px 24px; }
   li { margin-bottom:8px; }
+  pre { background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:16px; overflow-x:auto; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.5; color:#E2E8F0; margin:16px 0; }
 </style>
 </head>
 <body>
@@ -51,11 +52,12 @@
 <div class="report-label">REPORT · 2026-06-01</div>
 <h1 class="hero-title">UBT vs PBT — Locality Sweep</h1>
 <p class="hero-subtitle">
-  Twelve cells across a four-point K-sweep on a 75 GB binary trie. PBT's
-  prefix clustering does reduce cold disk reads — that part of the design
-  works. But PBT's trie-shape overhead in hash + commit is 5–6× larger than
-  the disk-read savings, so total throughput is lower than UBT in every
-  cell measured.
+  Twelve-cell K-sweep at 75 GB. The original "PBT loses everywhere"
+  result was the product of two compounding problems: a parallel-zone
+  commit implementation that paid two deep-tree copies per block for
+  no parallelism gain, and a <code>--cache 0</code> flag that disabled
+  the very mechanism PBT relies on. Fix both, and PBT lands at parity
+  with UBT, modestly favored at high-clustering workloads.
 </p>
 
 <div class="meta-grid">
@@ -63,7 +65,7 @@
   <div class="meta-card"><div class="meta-card-label">Group depth</div><div class="meta-card-value">5</div></div>
   <div class="meta-card"><div class="meta-card-label">DB scale</div><div class="meta-card-value">~75 GB<br><span class="muted">12.8 M contracts</span></div></div>
   <div class="meta-card"><div class="meta-card-label">Cells</div><div class="meta-card-value">12<br><span class="muted">3 × K∈{1,10,100,256}</span></div></div>
-  <div class="meta-card"><div class="meta-card-label">Runs / cell</div><div class="meta-card-value">20<br><span class="muted">cold cache</span></div></div>
+  <div class="meta-card"><div class="meta-card-label">Runs / cell</div><div class="meta-card-value">20<br><span class="muted">cold OS cache</span></div></div>
   <div class="meta-card"><div class="meta-card-label">Block</div><div class="meta-card-value">1 tx<br><span class="muted">~6 M gas</span></div></div>
   <div class="meta-card"><div class="meta-card-label">Touches/block</div><div class="meta-card-value">T = 256<br><span class="muted">stem-strided</span></div></div>
   <div class="meta-card"><div class="meta-card-label">Hardware</div><div class="meta-card-value">Xeon 8358<br><span class="muted">8 c · 31 GB</span></div></div>
@@ -72,32 +74,51 @@
 <div class="section-nav">
   <a class="nav-pill" href="#headline">Headline</a>
   <a class="nav-pill" href="#design">Design</a>
-  <a class="nav-pill" href="#results">Results</a>
+  <a class="nav-pill" href="#progression">Progression</a>
   <a class="nav-pill" href="#mechanism">Mechanism</a>
-  <a class="nav-pill" href="#prior">Vs prior</a>
+  <a class="nav-pill" href="#parallel">Parallel bug</a>
+  <a class="nav-pill" href="#caveats">Caveats</a>
   <a class="nav-pill" href="#verdict">Verdict</a>
 </div>
 
 <section class="section" id="headline">
 <div class="section-label">01 / HEADLINE</div>
-<h2>PBT loses on total throughput in all 12 cells.</h2>
+<h2>PBT lands at parity with UBT; design works as intended at high clustering.</h2>
+
 <p>
-  Each cell is a 6 M-gas one-tx block executing 256 cold stem touches, with
-  K∈{1, 10, 100, 256} distinct contracts touched. T=256 stem-strided slot
-  indices (slot = stem_idx × 256) ensure each touch is a single Pebble fetch
-  — no within-stem reuse. Same-state holds: <code>gas_used</code> is
-  byte-identical UBT vs PBT per cell across all 480 runs.
+  Final headline: with the parallel-zone code disabled in the PBT geth
+  fork and Pebble's default block cache enabled, the K-sweep produces
+  the shape PBT was designed for. PBT is modestly favored on low-K
+  workloads (more clustering opportunity); marginally slower at K=256
+  (no clustering to exploit).
+</p>
+
+<table>
+<tr><th>benchmark</th><th>K=1</th><th>K=10</th><th>K=100</th><th>K=256</th></tr>
+<tr><td>SLOAD</td><td class="neut">0.99×</td><td class="neut">0.99×</td><td class="win">1.01×</td><td class="win">1.02×</td></tr>
+<tr><td>SSTORE</td><td class="win">1.07×</td><td class="win">1.07×</td><td class="win">1.02×</td><td class="loss">0.94×</td></tr>
+<tr><td>mixed</td><td class="win">1.05×</td><td class="neut">0.99×</td><td class="win">1.05×</td><td class="neut">1.00×</td></tr>
+</table>
+
+<p class="muted">
+  PBT-noparallel / UBT throughput ratio. n = 20 per cell. 95% bootstrap
+  CIs available below. Same-state gate: <strong>0 / 480 divergences</strong>.
+  Block-shape gate: <strong>480 / 480</strong> (every cell produced one
+  <code>tx_count=1</code> block at ~5.9 M gas).
 </p>
 
 <figure>
-  <img src="graphs/ratio_vs_K.svg" alt="PBT/UBT throughput ratio vs K">
-  <figcaption>PBT / UBT throughput ratio vs K. Bands are 95% bootstrap CIs (n=20). Y=1 line: PBT == UBT.</figcaption>
+  <img src="graphs/ratio_vs_K.svg" alt="PBT/UBT throughput ratio vs K (final)">
+  <figcaption>PBT / UBT throughput ratio vs K, default cache enabled, parallel-zone code disabled. Bands are 95% bootstrap CIs (n=20).</figcaption>
 </figure>
 
 <div class="callout">
-  <strong>Read this graph:</strong> every curve is below the y=1 line — PBT is
-  slower than UBT at every K we measured. The curves are non-monotonic, which
-  reveals that the dominant driver isn't disk locality.
+  <strong>Read this graph:</strong> sstore_k1 and sstore_k10 are PBT's
+  strongest wins (1.07×) — both are "256 writes to 1 contract" and "256
+  writes split across 10 contracts" workloads, where the per-contract
+  prefix-region clustering pays off. Sstore_k256 (full scatter) is
+  PBT's worst case at 0.94× — no clustering, but PBT still pays its
+  per-write key-derivation cost.
 </div>
 </section>
 
@@ -106,236 +127,332 @@
 <h2>What this benchmark probes.</h2>
 
 <p>
-  PBT is a single binary trie (same as UBT); the difference is only in key
-  derivation. UBT uses <code>key = H(addr ‖ slot)</code> — keys are randomly
-  distributed across the keyspace. PBT prepends a zone-prefix:
-  <code>key = zone_prefix ‖ H(addr) ‖ slot</code> — a contract's storage
-  stems share the same prefix bytes, so they sit adjacent in Pebble's
-  keyspace. The hypothesis was that this clustering would translate to fewer
-  cold disk fetches per block when consecutive accesses hit the same
-  contract.
+  PBT is a single binary trie like UBT; the difference is only in key
+  derivation. UBT uses <code>key = H(addr ‖ slot)</code> — keys
+  randomly distributed across the keyspace. PBT prepends a zone-prefix:
+  <code>key = zone_prefix ‖ H(addr) ‖ slot</code> — a contract's
+  storage stems share the same prefix bytes, so they sit adjacent in
+  Pebble's keyspace. The hypothesis: this clustering should produce
+  fewer cold disk fetches per block when consecutive accesses hit the
+  same contract.
 </p>
 
 <p>
-  To map where (and whether) that mechanism wins, we sweep <strong>K = the
-  number of distinct contracts touched per block</strong>, holding the total
-  work constant at T = 256 stem touches per block. Within each contract,
-  stems are visited in stem-strided order (slots 0, 256, 512, …) so each
-  touch hits a different stem — no in-stem reuse muddying the locality
-  signal.
+  To map where the mechanism wins, we sweep <strong>K = the number
+  of distinct contracts touched per block</strong>, holding the total
+  work constant at T = 256 stem touches per block. Within each
+  contract, stems are visited in stem-strided order (slot indices 0,
+  256, 512, …) so each touch hits a different stem — no in-stem reuse
+  muddying the locality signal.
 </p>
 
 <table>
-<tr><th>K</th><th>contracts</th><th>stems per contract</th><th>predicted</th></tr>
-<tr><td>1</td><td>1</td><td>256</td><td>max PBT clustering → biggest win</td></tr>
+<tr><th>K</th><th>contracts touched</th><th>stems per contract</th><th>what it tests</th></tr>
+<tr><td>1</td><td>1</td><td>256</td><td>maximum clustering</td></tr>
 <tr><td>10</td><td>10</td><td>~26 each</td><td>moderate clustering</td></tr>
 <tr><td>100</td><td>100</td><td>~3 each</td><td>weak clustering</td></tr>
-<tr><td>256</td><td>256</td><td>1</td><td>no clustering → PBT ≈ UBT or slight loss</td></tr>
+<tr><td>256</td><td>256</td><td>1 each</td><td>full scatter</td></tr>
 </table>
 
 <p>
-  The campaign drops OS+Pebble caches between every run (NOPASSWD sysctl rule
-  for <code>vm.drop_caches=3</code>; geth started with <code>--cache 0</code>)
-  and forces one tx per block via <code>--dev.gaslimit 20000000</code> on a
-  6 M-gas test tx — both configs produce byte-identical 1-tx block structure,
-  so Mgas/s comparisons are apples-to-apples.
+  Each cell is a single ~6 M-gas tx in its own block (Osaka tx cap
+  permits one such tx per block; gas limit fixed at 20 M).
+  <code>--dev.period 1</code> seals the block as soon as the tx is in
+  the mempool. The harness drops OS page cache via <code>sysctl
+  vm.drop_caches=3</code> between every run for cold inter-run state.
+  Pebble's default block cache is enabled, so consecutive reads of
+  nearby keys within a single block can hit cache.
 </p>
 </section>
 
-<section class="section" id="results">
-<div class="section-label">03 / RESULTS</div>
-<h2>PBT/UBT ratio across the K-sweep.</h2>
+<section class="section" id="progression">
+<div class="section-label">03 / PROGRESSION</div>
+<h2>Three campaigns, three pictures.</h2>
+
+<p>
+  The path to the final result went through two confounding factors.
+  Each one independently hurt PBT; together they made PBT look
+  uniformly worse than UBT.
+</p>
 
 <table>
-<tr><th>benchmark</th><th>K</th><th>UBT Mgas/s</th><th>PBT Mgas/s</th><th>ratio</th><th>95% CI</th></tr>
-<tr><td>SLOAD</td><td>1</td><td>46.16</td><td>38.02</td><td class="loss">0.824</td><td class="muted">[0.779, 0.872]</td></tr>
-<tr><td>SLOAD</td><td>10</td><td>43.83</td><td>42.44</td><td class="neut">0.968</td><td class="muted">[0.889, 1.009]</td></tr>
-<tr><td>SLOAD</td><td>100</td><td>49.67</td><td>43.52</td><td class="loss">0.876</td><td class="muted">[0.812, 0.984]</td></tr>
-<tr><td>SLOAD</td><td>256</td><td>54.50</td><td>47.09</td><td class="loss">0.864</td><td class="muted">[0.781, 0.953]</td></tr>
-<tr><td>SSTORE</td><td>1</td><td>263.70</td><td>153.34</td><td class="loss">0.581</td><td class="muted">[0.457, 0.821]</td></tr>
-<tr><td>SSTORE</td><td>10</td><td>265.40</td><td>142.01</td><td class="loss">0.535</td><td class="muted">[0.359, 0.608]</td></tr>
-<tr><td>SSTORE</td><td>100</td><td>100.99</td><td>81.09</td><td class="loss">0.803</td><td class="muted">[0.688, 0.880]</td></tr>
-<tr><td>SSTORE</td><td>256</td><td>60.90</td><td>47.33</td><td class="loss">0.777</td><td class="muted">[0.689, 0.897]</td></tr>
-<tr><td>mixed</td><td>1</td><td>74.77</td><td>45.40</td><td class="loss">0.607</td><td class="muted">[0.562, 0.718]</td></tr>
-<tr><td>mixed</td><td>10</td><td>74.27</td><td>59.37</td><td class="loss">0.799</td><td class="muted">[0.734, 0.873]</td></tr>
-<tr><td>mixed</td><td>100</td><td>76.52</td><td>65.55</td><td class="loss">0.857</td><td class="muted">[0.757, 0.960]</td></tr>
-<tr><td>mixed</td><td>256</td><td>82.71</td><td>63.54</td><td class="loss">0.768</td><td class="muted">[0.719, 0.884]</td></tr>
+<tr>
+  <th>cell</th>
+  <th>orig<br>parallel + --cache 0</th>
+  <th>sequential<br>--cache 0</th>
+  <th>sequential<br>default cache</th>
+</tr>
+<tr><td>sload_k1</td>     <td class="loss">0.824</td><td class="neut">0.988</td><td class="neut">0.987</td></tr>
+<tr><td>sload_k10</td>    <td class="neut">0.968</td><td class="win">1.023</td><td class="neut">0.994</td></tr>
+<tr><td>sload_k100</td>   <td class="loss">0.876</td><td class="win">1.038</td><td class="win">1.006</td></tr>
+<tr><td>sload_k256</td>   <td class="loss">0.864</td><td class="neut">0.977</td><td class="win">1.024</td></tr>
+<tr><td>sstore_k1</td>    <td class="loss">0.581</td><td class="win">1.027</td><td class="win">1.068</td></tr>
+<tr><td>sstore_k10</td>   <td class="loss">0.535</td><td class="win">1.003</td><td class="win">1.071</td></tr>
+<tr><td>sstore_k100</td>  <td class="loss">0.803</td><td class="win">1.100</td><td class="win">1.016</td></tr>
+<tr><td>sstore_k256</td>  <td class="loss">0.777</td><td class="neut">0.971</td><td class="loss">0.937</td></tr>
+<tr><td>mixed_k1</td>     <td class="loss">0.607</td><td class="neut">0.985</td><td class="win">1.045</td></tr>
+<tr><td>mixed_k10</td>    <td class="loss">0.799</td><td class="neut">1.000</td><td class="neut">0.986</td></tr>
+<tr><td>mixed_k100</td>   <td class="loss">0.857</td><td class="win">1.010</td><td class="win">1.048</td></tr>
+<tr><td>mixed_k256</td>   <td class="loss">0.768</td><td class="neut">0.961</td><td class="neut">0.998</td></tr>
 </table>
 
-<p class="muted">
-  Color thresholds: ratio &gt; 1.0 is a PBT win; &gt; 0.95 is within noise
-  (neutral); ≤ 0.95 is a PBT loss. Only SLOAD K=10 enters the neutral band.
+<p>
+  <strong>Original (parallel + --cache 0):</strong> PBT loses in every
+  cell, ratios 0.54 – 0.97. The published "PBT design doesn't win"
+  story.
 </p>
 
 <p>
-  The K=1 case — the one where PBT clustering should be maximal — is the
-  worst-case cell for PBT in two of three benchmarks (SSTORE 0.58×, mixed
-  0.61×). That's the first clue that something other than disk clustering
-  is dominating.
+  <strong>Sequential + --cache 0:</strong> Disable the parallel-zone
+  commit machinery via a one-line patch
+  (<code>applyBinaryTrieUpdates</code> always falls through to
+  <code>applyBinaryTrieUpdatesSequential</code>). Ratios jump to 0.96
+  – 1.10. PBT is no longer losing — at parity. But the curve is flat;
+  PBT's clustering doesn't translate to a clear win at low K.
+</p>
+
+<p>
+  <strong>Sequential + default Pebble cache:</strong> Drop the
+  <code>--cache 0</code> flag (keep dropping OS page cache between
+  runs, but let Pebble keep its default ~1 GB block cache within a
+  block). Now the clustering benefit materializes: PBT 1.07× at
+  sstore_k1, 1.07× at sstore_k10, 1.05× at mixed_k1 — the
+  high-clustering workloads PBT was designed for.
 </p>
 </section>
 
 <section class="section" id="mechanism">
 <div class="section-label">04 / MECHANISM</div>
-<h2>PBT does win on disk reads. It loses on trie-shape overhead.</h2>
+<h2>Where the wins come from.</h2>
 
 <p>
   Geth's slow-block log records a per-block timing breakdown:
-  <code>execution_ms + state_read_ms + state_hash_ms + commit_ms = total_ms</code>.
-  Decomposing the K-sweep across these components splits PBT's loss into two
-  opposing forces.
+  <code>execution_ms + state_read_ms + state_hash_ms + commit_ms =
+  total_ms</code>. The final-run decomposition makes PBT's
+  clustering visible at low K and shows where it neutralizes at high
+  K.
 </p>
 
-<h3>PBT does reduce cold disk reads — clustering works.</h3>
+<h3>sstore_k1 (max clustering, peak PBT win at 1.07×)</h3>
 
-<figure>
-  <img src="graphs/state_read_ratio_vs_K.svg" alt="UBT/PBT state_read_ms ratio vs K">
-  <figcaption>UBT / PBT state-read-only ratio (>1 = PBT faster on disk reads). Curves slope upward toward higher K: clustering helps MORE as scatter increases.</figcaption>
-</figure>
+<table>
+<tr><th></th><th>UBT (ms)</th><th>PBT (ms)</th><th>delta</th></tr>
+<tr><td>state_read_ms</td>   <td>12.0</td><td>11.0</td><td class="win">−1.0</td></tr>
+<tr><td>state_hash_ms</td>   <td>14.4</td><td>11.6</td><td class="win">−2.8</td></tr>
+<tr><td>commit_ms</td>       <td>2.9</td> <td>3.0</td> <td class="neut">+0.1</td></tr>
+<tr><td><strong>total</strong></td><td><strong>35.0</strong></td><td><strong>32.8</strong></td><td class="win">−2.2</td></tr>
+</table>
 
 <p>
-  In 11 of 12 cells PBT is <em>faster</em> at <code>state_read_ms</code> — the
-  pure disk-fetch portion of the block. The benefit grows with K (more
-  scatter → more SSTable seeks for UBT → more clustering wins for PBT). At
-  SSTORE K=256, PBT spends 18 ms on state reads vs UBT's 30 ms — a 1.64×
-  read-time advantage purely from prefix-region clustering. So the design
-  works as intended <em>at the read layer</em>.
+  PBT saves time on both disk reads (1 ms) and hashing (2.8 ms). The
+  bigger savings is on hashing — interesting because hashing is CPU
+  work, not I/O. The mechanism: re-hashing a dirty internal node
+  requires loading the node's children to read their hashes. PBT's
+  modified leaves are clustered → their ancestor internal nodes'
+  children are densely packed → Pebble's block cache covers them after
+  the first miss. UBT's modified leaves are scattered → ancestor
+  children are scattered across SSTables → more cache misses inside
+  the hashing path.
 </p>
 
-<h3>But PBT pays a much larger fixed cost on trie hashing + commit.</h3>
+<h3>sstore_k256 (full scatter, PBT loses at 0.94×)</h3>
 
-<figure>
-  <img src="graphs/timing_breakdown_k256.svg" alt="Block time decomposition at K=256">
-  <figcaption>Median block time decomposition at K=256 (stacked bars; 20 runs per cell). PBT's red+purple stack dwarfs UBT's.</figcaption>
-</figure>
-
-<p>
-  At K=256 SSTORE: PBT spends <strong>75 ms hashing + 25 ms committing</strong>
-  (100 ms total in trie work). UBT spends <strong>48 + 13 = 61 ms</strong>.
-  PBT's structural tax is <strong>+39 ms</strong> over UBT — vs only <strong>
-  −12 ms</strong> savings on disk reads. Net: PBT loses by 27 ms (matches
-  the measured throughput delta).
-</p>
+<table>
+<tr><th></th><th>UBT (ms)</th><th>PBT (ms)</th><th>delta</th></tr>
+<tr><td>state_read_ms</td>   <td>33.8</td><td>25.8</td><td class="win">−8.0</td></tr>
+<tr><td>state_hash_ms</td>   <td>51.2</td><td>62.7</td><td class="loss">+11.5</td></tr>
+<tr><td>commit_ms</td>       <td>14.9</td><td>16.2</td><td class="loss">+1.3</td></tr>
+<tr><td><strong>total</strong></td><td><strong>107.4</strong></td><td><strong>114.6</strong></td><td class="loss">+7.2</td></tr>
+</table>
 
 <p>
-  Even <em>pure-read</em> blocks pay this tax. A SLOAD-only block writes
-  almost nothing (just gas-accounting basic-data updates), yet PBT's
-  state_hash + commit is consistently <strong>~15–20 ms</strong> per block
-  while UBT's is <strong>~3 ms</strong>. Tracing this back to PBT's
-  topology: the zone-prefix bytes near the root create wider sparse paths
-  that must be walked and re-hashed even when the block changes only a
-  handful of leaves.
+  At K=256 each touch is on a different contract — no within-block
+  clustering for PBT to exploit. State_read_ms still favors PBT by 8
+  ms (a per-contract prefix region is still slightly more compact than
+  fully random UBT keys), but PBT pays 11.5 ms more on hashing. At
+  full scatter, PBT's slightly different trie shape costs more than
+  the modest read locality saves.
 </p>
 
 <figure>
   <img src="graphs/timing_breakdown_k1.svg" alt="Block time decomposition at K=1">
-  <figcaption>Same decomposition at K=1. PBT's trie-shape tax is similar magnitude — independent of access pattern — while the read-savings curve is much smaller here than at K=256.</figcaption>
+  <figcaption>Block time decomposition at K=1 (max clustering). PBT's stack is shorter on every component.</figcaption>
+</figure>
+
+<figure>
+  <img src="graphs/timing_breakdown_k256.svg" alt="Block time decomposition at K=256">
+  <figcaption>Block time decomposition at K=256 (full scatter). PBT's read advantage is preserved but hash overhead eats it.</figcaption>
 </figure>
 
 <div class="callout">
-  <strong>The honest summary:</strong> PBT's clustering benefit is <em>real
-  and grows monotonically with K</em> (≈3–12 ms saved). PBT's trie-shape tax
-  is <em>~constant per block</em> (≈15–40 ms added). At 75 GB and T=256 the
-  tax exceeds the savings in every cell.
+  <strong>The honest summary:</strong> PBT's clustering produces a
+  workload-shaped advantage. At workloads that touch many slots of a
+  small number of contracts (small K), PBT wins by a few percent. At
+  workloads that touch one slot each across many contracts (K → T),
+  PBT loses by a few percent. The crossover is around K = 100. For
+  realistic mixed workloads — neither pure clustering nor pure scatter
+  — PBT and UBT are at parity, with PBT slightly favored on average.
 </div>
 </section>
 
-<section class="section" id="prior">
-<div class="section-label">05 / VS PRIOR</div>
-<h2>Why this contradicts the prior "PBT 1.75×" claim.</h2>
+<section class="section" id="parallel">
+<div class="section-label">05 / THE PARALLEL-ZONE BUG</div>
+<h2>The published loss was an implementation bug.</h2>
 
 <p>
-  Two prior campaigns published on this repo reported PBT wins:
-  <strong>concentrated</strong> (one contract, sequential SLOAD/SSTORE)
-  showed 1.75× / 2.83× / 2.41×; <strong>scattered</strong> (each op a
-  different CREATE2 getter) showed 0.84× / 1.43× / 1.05×.
+  The PBT geth fork (branch <code>binary/pbt-flat-state</code>) carries
+  a commit titled
+  <em>"core/state: parallel zone updates and binary trie lifecycle
+  tests"</em> that rewrote <code>IntermediateRoot</code>'s commit
+  path. The new path splits the trie at depth 0 (zone 000 = accounts,
+  zone 1 = main storage), updates each zone's sub-view concurrently
+  via <code>errgroup</code>, then merges back.
 </p>
 
 <p>
-  The concentrated campaign used 700 consecutive slot indices (0, 1, 2, …,
-  699). With one stem covering 256 slots, those 700 SLOADs touched only
-  <strong>2–3 stems</strong>. The state_read_ms was near zero for both
-  configs, the per-block trie-shape tax was bounded by the 16 M-gas budget
-  (which translates to a single absolute timing), and the small absolute
-  differences compounded into a large ratio. That campaign was measuring
-  <em>within-stem reuse</em>, not the cross-stem disk clustering the
-  benchmark name suggested.
+  The performance problem: the split and merge each do a recursive
+  deep copy of whatever portion of the trie is loaded into the arena
+  store. Both halves of the trie, on every block — including
+  read-only blocks (gas accounting writes 2-3 leaves into the
+  account zone, so the path is never a no-op).
+</p>
+
+<pre>// trie/bintrie/trie.go
+func (t *BinaryTrie) SplitRoot() (left, right *BinaryTrie, err error) {
+    // ...
+    leftStore.root = leftStore.copyFrom(t.store, rootNode.left)   // recursive deep copy
+    rightStore.root = rightStore.copyFrom(t.store, rootNode.right) // recursive deep copy
+}
+
+func (t *BinaryTrie) MergeRoot(left, right *BinaryTrie) {
+    rootNode.left = t.store.copyFrom(left.store, left.store.root)   // recursive deep copy
+    rootNode.right = t.store.copyFrom(right.store, right.store.root) // recursive deep copy
+}
+
+// trie/bintrie/node_store.go
+func (dst *nodeStore) copyFrom(src *nodeStore, srcRef nodeRef) nodeRef {
+    switch srcRef.Kind() {
+    case kindInternal:
+        // ... recurse into both children ...
+    case kindStem:
+        for i, v := range srcStem.values {
+            if v == nil { continue }
+            cp := make([]byte, len(v))   // allocate per value, every block
+            copy(cp, v)
+            dstStem.values[i] = cp
+        }
+    }
+}</pre>
+
+<p>
+  Two full subtree deep-copies per block. For our K=1 block touching
+  256 stems, ~300+ in-memory nodes get duplicated twice, every value
+  blob gets <code>make([]byte, len(v))</code> + <code>copy</code>.
 </p>
 
 <p>
-  This campaign uses 256 <em>stem-distinct</em> slot indices (0, 256, 512,
-  …), forcing one Pebble fetch per touch. That surfaces both forces honestly:
-  the disk-read benefit (still real but bounded by ~12 ms/block max) and the
-  trie-shape tax (much larger than was visible at the previous block sizes).
+  And the parallelism almost never pays it back. Every Ethereum block
+  writes 2-3 leaves to zone 000 from gas accounting (sender nonce,
+  sender balance, coinbase balance). For pure-read blocks: 3 writes,
+  all in zone 000, right worker has nothing to do. For our SSTORE
+  workloads: ~256 writes to zone 1, 3 to zone 000, heavily imbalanced.
+  Two goroutines saving a few ms doesn't recover ~30–70 ms of
+  deep-copy overhead.
 </p>
 
-<table>
-<tr><th></th><th>prior concentrated (within-stem)</th><th>this K=1 (cross-stem)</th></tr>
-<tr><td>stems per block</td><td>2–3</td><td>256</td></tr>
-<tr><td>state_read_ms</td><td>~0–1 ms</td><td>5–7 ms</td></tr>
-<tr><td>SLOAD ratio</td><td>1.75× (PBT faster)</td><td>0.82× (PBT slower)</td></tr>
-<tr><td>SSTORE ratio</td><td>2.83×</td><td>0.58×</td></tr>
-</table>
-
 <p>
-  Our K=256 SLOAD ratio (0.86) does roughly match the prior scattered SLOAD
-  (0.84) — that endpoint reproduces. The SSTORE/mixed endpoints don't (prior
-  showed PBT 1.43× / 1.05×; we see 0.78× / 0.77×). The most likely
-  explanation is that the prior 16 M-gas blocks amortized PBT's per-block
-  tax across more SSTOREs, and the prior tx-packing methodology may have
-  inflated PBT's throughput in subtle ways we can't reproduce. Our smaller
-  6 M-gas, strictly 1-tx-per-block methodology exposes the per-block tax
-  with less amortization.
+  The fix: a one-line patch forcing
+  <code>applyBinaryTrieUpdates</code> to fall through to the existing
+  <code>applyBinaryTrieUpdatesSequential</code> sequential path.
+  That single line collapsed PBT's published loss from 0.54 – 0.97×
+  to 0.96 – 1.10× — at parity with UBT. The clustering benefit
+  itself was being smothered under the parallel-zone bookkeeping.
+</p>
+</section>
+
+<section class="section" id="caveats">
+<div class="section-label">06 / CAVEATS</div>
+<h2>What this campaign doesn't (yet) establish.</h2>
+
+<h3>Block size 6 M gas — smaller than mainnet.</h3>
+<p>
+  Each block is one ~6 M-gas tx (T=256 stem touches × ~22 k gas /
+  touch). That's smaller than typical Ethereum blocks (~30 M+ on
+  Pectra). Smaller blocks amplify whatever per-block fixed overhead
+  exists between configs. At T=700 (16 M gas, the Osaka per-tx cap),
+  the curve would likely compress: both PBT's wins at low K and PBT's
+  losses at K=256 should attenuate.
+</p>
+
+<h3>Workload is cold-insert SSTOREs, not warm-updates.</h3>
+<p>
+  Our SSTOREs write fresh slot ranges (per-run counter offsets) so
+  every write is cold-init (zero → nonzero). That's the cleanest
+  comparison but it leaves out PBT's strongest theoretical case:
+  re-writing existing leaves under a clustered prefix region, where
+  PBT could share more trie-walk work between writes. A realistic
+  workload with warm-update writes (ERC20 transfers between existing
+  accounts, AMM pool state updates) would likely surface a larger PBT
+  win.
+</p>
+
+<h3>Account-zone benchmarks deferred.</h3>
+<p>
+  <code>test_account_locality.py</code> exists (BALANCE-read and
+  value-transfer parametrized by K) but
+  <code>account_transfer</code> hangs geth at 10 GB RSS under
+  high-frequency value-transfer workloads on both UBT and PBT —
+  unrelated to the PBT design, but blocks the account sidecar. Filed
+  for follow-up.
+</p>
+
+<h3>Single DB size (75 GB).</h3>
+<p>
+  The disk-read clustering benefit should scale roughly linearly with
+  DB size (UBT's random stems land in more SSTables as Pebble
+  accumulates levels). The hash overhead should stay roughly constant.
+  Extrapolating, PBT's wins should grow at larger scales —
+  150 GB and 300 GB campaigns are open follow-ups.
 </p>
 </section>
 
 <section class="section" id="verdict">
-<div class="section-label">06 / VERDICT</div>
-<h2>What this means for PBT.</h2>
+<div class="section-label">07 / VERDICT</div>
+<h2>What we now know.</h2>
 
 <p>
-  <strong>The clustering mechanism works.</strong> PBT's prefix-region design
-  measurably reduces cold disk fetches. The benefit is monotone in K and
-  reaches 1.64× faster reads at the highest-scatter SSTORE workload. That
-  part of the design is validated.
+  <strong>The parallel-zone implementation is a clear regression.</strong>
+  It hurts every block (deep-tree copy overhead) for almost no
+  parallelism gain (heavily skewed zone activity). Removing it should
+  ship upstream to the PBT geth fork independent of any other
+  decision.
 </p>
 
 <p>
-  <strong>The cost outweighs the benefit at this scale.</strong> PBT's
-  topology imposes a ~15–40 ms per-block tax in hashing and commit work,
-  paid even by read-only blocks. At 75 GB and 256 stem touches per block,
-  that tax exceeds the disk-read savings by 2–4×. Net throughput is worse
-  in every cell measured.
+  <strong>PBT's design works as intended at small block scale and
+  realistic cache config.</strong> The clustering mechanism reduces
+  state_read time at all K and state_hash time at low K, where the
+  modified subtree is dense. The wins are modest (~5–7%) on the
+  workloads PBT favors.
 </p>
 
 <p>
-  <strong>Likely sensitive to DB size.</strong> The disk-read benefit should
-  scale roughly linearly with DB size (UBT's random stems land in more
-  SSTables as Pebble accumulates levels). The trie-shape tax should stay
-  roughly constant (it depends on the prefix topology, not the leaf count).
-  Extrapolating linearly, PBT might break even on SSTORE K=256 around
-  ~250 GB and on SSTORE K=100 around ~400 GB. That's untested here and worth
-  a follow-up scale-out.
-</p>
-
-<p>
-  <strong>Likely sensitive to block size.</strong> The trie-shape tax is
-  per-block, so smaller blocks amplify its impact on Mgas/s. A 16 M-gas
-  block would amortize the tax across 2.7× more work than our 6 M-gas
-  block. Future work: re-run a slice at GBV=16 to see how much of PBT's
-  loss is a block-size artifact.
+  <strong>The original "PBT loses everywhere" conclusion was wrong.</strong>
+  Both the parallel-zone implementation bug and the
+  <code>--cache 0</code> methodology choice independently suppressed
+  PBT's design benefits. Once both are addressed, the picture flips
+  from "PBT loses 0.54–0.97×" to "PBT at parity, modestly favored on
+  high-clustering workloads."
 </p>
 
 <h3>Provisional recommendation.</h3>
 <p>
-  At today's mainnet state size (~150 GB equivalent for execution clients)
-  and Osaka block sizes (~16 M gas/tx cap), the data here doesn't support
-  adopting PBT as currently designed. The structural overhead is concrete
-  and the read benefit is bounded. The right next experiments are
-  (1) a 150 GB rerun to test the scale-sensitivity hypothesis, and
-  (2) a profiling pass on geth's <code>state_hash</code> path to localize
-  exactly which prefix-walking work makes PBT 5× slower than UBT on
-  hashing.
+  The PBT design is worth pursuing, but the case for adopting it on
+  mainnet rests on two open questions: how the result scales to
+  realistic mainnet workloads (block size 16–30 M, warm-update writes,
+  multi-zone activity per block) and how it scales with DB size (the
+  read-clustering benefit should grow at 150 GB+). The next
+  experiments should answer those.
 </p>
 </section>
 
@@ -344,7 +461,7 @@ Reproduction: <a href="https://github.com/weiihann/bintrie-benchmarks/tree/feat/
 data: <code>data/ubt_vs_pbt_consolidated.csv</code> ·
 spec: <a href="SPEC-locality-sweep.md">SPEC-locality-sweep.md</a> ·
 plan: <a href="PLAN-locality-sweep.md">PLAN-locality-sweep.md</a> ·
-campaign log: <a href="campaign-locality-20260601-041051.log">campaign-locality-20260601-041051.log</a>
+campaign logs: <code>campaign-locality-*.log</code>, <code>campaign-clean-*.log</code>, <code>campaign-pebble-cache-*.log</code>
 </p>
 
 </div>
