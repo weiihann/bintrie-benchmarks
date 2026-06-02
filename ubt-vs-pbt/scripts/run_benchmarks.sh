@@ -29,9 +29,9 @@ COLD_CACHE="${COLD_CACHE:-0}"
 # Total gas per benchmark invocation, in millions. T_TOUCHES=256 stem fetches
 # at ~22 k gas each ≈ ~6 M; this fits one tx (Osaka cap ≈ 16.7 M) in a 20 M-gas
 # block, so each invocation is one cold 1-tx block — apples-to-apples Mgas/s.
-GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-6}"
-# K-sweep values per zone. Storage cells use 4 K values; account cells use 2.
-K_VALUES_STORAGE="${K_VALUES_STORAGE:-1 10 100 256}"
+GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-16}"
+# K-sweep values per zone. T=700, K_max=T (full scatter), K_min=1 (max clustering).
+K_VALUES_STORAGE="${K_VALUES_STORAGE:-1 10 100 400 700}"
 K_VALUES_ACCOUNT="${K_VALUES_ACCOUNT:-10 256}"
 # The locality sweep interleaves K contracts × T/K stems each inside the EVM
 # (attack walks a calldata address+sequence table), so there is no harness-side
@@ -346,13 +346,13 @@ for spec in "${CONFIGS[@]}"; do
         # Per-run write offset: each run's writes start at a fresh, never-used slot
         # range (stride 100M >> ops/run), so SSTOREs are cold inserts, not warm
         # re-writes. Identical across configs (same run number) → same-state holds.
-        # TEMPORARY (Phase O rerun, 2026-06-01): shifted by +200 to write into
+        # TEMPORARY (Phase T rerun, 2026-06-01): shifted by +300 to write into
         # slot ranges never touched by the prior campaigns on this DB
-        # (original 100M..2B; Phase L rerun 10.1G..12G). Every SSTORE is
-        # cold-init at fresh slot range 20.1G..22G.
+        # (original 100M..2B; Phase L 10.1G..12G; Phase O/P 20.1G..22G).
+        # Fresh cold-init range 30.1G..32G.
         # REVERT to `run * 100000000` before any future campaign that builds
         # fresh DBs.
-        export SCATTERED_WRITE_OFFSET=$(( (run + 200) * 100000000 ))
+        export SCATTERED_WRITE_OFFSET=$(( (run + 300) * 100000000 ))
         export LOCALITY_K="$K"
         log ""
         log "  --- $stem ($name) write-offset=$SCATTERED_WRITE_OFFSET K=$K ---"

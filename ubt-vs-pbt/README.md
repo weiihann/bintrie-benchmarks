@@ -18,46 +18,48 @@ the implementation plan.
 
 ## Headline
 
-PBT lands **at parity with UBT** (ratios 0.94–1.07×), modestly favored on
-high-clustering workloads. The original "PBT loses 0.54–0.97×" result was the
-product of two compounding methodology issues:
+PBT's clustering helps **reads** at every K (1.00–1.05× across all cells), but
+PBT's sequential commit path scales worse per write than UBT's. At
+mainnet-realistic block sizes (T=700 stem touches, ~16 M-gas tx, the Osaka
+per-tx cap) PBT loses on writes by 15–25% and on mixed workloads by 2–6%:
 
-1. The PBT geth fork carries a `parallel zone updates` commit (`928668da0`)
-   that recursively deep-copies both halves of the trie on every block. Each
-   commit pays ~30–70 ms of `copyFrom` overhead for a parallelism gain that
-   almost never materializes (zone activity is heavily skewed in practice).
-2. Geth was started with `--cache 0`, disabling Pebble's block cache and
-   suppressing the within-block read locality PBT is designed to exploit.
+| benchmark | K=1 | K=10 | K=100 | K=400 | K=700 |
+|---|---:|---:|---:|---:|---:|
+| SLOAD  | **1.046×** | **1.036×** | **1.019×** | 0.997× | **1.010×** |
+| SSTORE | **0.750×** | 0.828× | 0.788× | 0.861× | 0.835× |
+| mixed  | 0.948× | 0.983× | 0.942× | 0.970× | 0.961× |
 
-After disabling the parallel-zone code (one-line patch forcing the existing
-sequential fallback) and using Pebble's default cache while still dropping
-OS page cache between runs:
+(PBT-noparallel / UBT throughput. Same-state: 0/600. Block-shape: 600/600.)
 
-| benchmark | K=1 | K=10 | K=100 | K=256 |
-|---|---:|---:|---:|---:|
-| SLOAD  | 0.99× | 0.99× | 1.01× | 1.02× |
-| SSTORE | **1.07×** | **1.07×** | 1.02× | 0.94× |
-| mixed  | **1.05×** | 0.99× | **1.05×** | 1.00× |
+This reverses the earlier T=256 (~6 M-gas blocks) finding — "PBT at parity,
+favored at low K" (sstore_k1 = 1.07×). That result didn't generalize: larger
+blocks expose a per-write cost in PBT's per-zone commit machinery that
+smaller blocks hide under per-block fixed overhead. Mechanism: UBT's
+`state_hash_ms` scales sublinearly with block writes (2.21× growth for 2.7×
+more touches); PBT's scales superlinearly (4.28×). See [`index.html`](index.html)
+for the full breakdown.
 
-(PBT-noparallel / UBT throughput. Same-state: 0/480. Block-shape: 480/480.)
-PBT wins on workloads with high per-contract clustering (low K) and slightly
-loses at full scatter (K=256). The mechanism is visible in the per-block
-timing decomposition (see [index.html](index.html)): clustering reduces both
-`state_read_ms` (4–8 ms at high K) and `state_hash_ms` (3 ms at low K).
+The natural fix is parallelising per-zone hashing. The
+`perf/pbt-parallel-commit` branch attempts exactly this with zero-copy
+SplitRoot/MergeRoot + N-way parallel apply, but its binary currently
+produces invalid state roots and couldn't be measured at scale. PBT's
+mainnet viability rests on that branch landing correctly.
 
 ## What this benchmark probes
 
 The hypothesis: PBT's clustering should translate to faster cold cross-stem
 reads when consecutive accesses hit the same contract. To map where that
 mechanism wins, we sweep **K = number of distinct contracts touched per block**,
-holding the total work constant at **T = 256 stem touches per block**.
+holding the total work constant at **T = 700 stem touches per block** (the
+maximum permissible under Osaka's per-tx cap at ~22 k gas per touch).
 
 | K | distribution | what it tests |
 |---|---|---|
-| 1 | 1 contract × 256 stems | max PBT clustering |
-| 10 | 10 contracts × ~26 stems each | moderate clustering |
-| 100 | 100 contracts × ~3 stems each | weak clustering |
-| 256 | 256 contracts × 1 stem each | no clustering (full scatter) |
+| 1 | 1 contract × 700 stems | max PBT clustering |
+| 10 | 10 contracts × ~70 stems each | strong clustering |
+| 100 | 100 contracts × ~7 stems each | weak clustering |
+| 400 | 400 contracts × ~2 stems each | near-scatter |
+| 700 | 700 contracts × 1 stem each | no clustering (full scatter) |
 
 Within each contract, stems are visited in **stem-strided** order: slot indices
 0, 256, 512, … so each touch hits a different stem (no in-stem reuse). This

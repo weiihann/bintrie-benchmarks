@@ -57,7 +57,7 @@ BENCH_LABELS = {
     "storage_mixed": "mixed (50/50)",
 }
 BENCH_ORDER = ["storage_sload", "storage_sstore", "storage_mixed"]
-K_VALUES = [1, 10, 100, 256]
+K_VALUES = [1, 10, 100, 400, 700]
 
 
 def _apply_theme(theme: dict) -> None:
@@ -251,7 +251,7 @@ def main() -> None:
         plot_ratio_vs_K(
             data, out_dir / "ratio_vs_K.svg", theme,
             metric="mgas_per_sec",
-            title="PBT / UBT throughput ratio vs K  (T=256 stem touches/block, 75 GB DB)",
+            title="PBT / UBT throughput ratio vs K  (T=700 stem touches/block, 16M-gas blocks, 75 GB DB)",
         )
         plot_ratio_vs_K(
             data, out_dir / "state_read_ratio_vs_K.svg", theme,
@@ -259,12 +259,12 @@ def main() -> None:
             title="PBT / UBT state-read advantage vs K  (clustering benefit isolated)",
         )
         plot_timing_breakdown(
-            data, out_dir / "timing_breakdown_k256.svg", theme, k=256,
+            data, out_dir / "timing_breakdown_k700.svg", theme, k=700,
         )
         plot_timing_breakdown(
             data, out_dir / "timing_breakdown_k1.svg", theme, k=1,
         )
-        print(f"  wrote {out_dir}/{{ratio_vs_K,state_read_ratio_vs_K,timing_breakdown_k1,timing_breakdown_k256}}.svg")
+        print(f"  wrote {out_dir}/{{ratio_vs_K,state_read_ratio_vs_K,timing_breakdown_k1,timing_breakdown_k700}}.svg")
 
 
 if __name__ == "__main__":

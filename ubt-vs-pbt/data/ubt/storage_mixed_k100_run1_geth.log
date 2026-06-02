@@ -1,133 +1,138 @@
-WARN [06-01|13:00:20.003] Unknown config environment variable      envvar=GETH_PBT_BIN
-WARN [06-01|13:00:20.003] Unknown config environment variable      envvar=GETH_UBT_BIN
-INFO [06-01|13:00:20.016] Starting Geth on Ethereum mainnet...
-INFO [06-01|13:00:20.020] Maximum peer count                       ETH=0 total=0
-INFO [06-01|13:00:20.022] Smartcard socket not found, disabling    err="stat /run/pcscd/pcscd.comm: no such file or directory"
-WARN [06-01|13:00:20.025] Option --miner.etherbase is deprecated as the etherbase is set by the consensus client post-merge
-INFO [06-01|13:00:20.028] Set global gas cap                       cap=50,000,000
-INFO [06-01|13:00:20.863] Using developer account                  address=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-INFO [06-01|13:00:20.907] Using pebble as the backing database
-INFO [06-01|13:00:20.907] Allocated cache and file handles         database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata cache=2.00GiB handles=262,144
-INFO [06-01|13:00:21.148] Opened ancient database                  database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain readonly=true
-INFO [06-01|13:00:21.148] Opened Era store                         datadir=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain/era
-INFO [06-01|13:00:21.155] Initializing the KZG library             backend=gokzg
-INFO [06-01|13:00:21.157] Allocated trie memory caches             clean=614.00MiB dirty=1.00GiB
-INFO [06-01|13:00:21.168] Using pebble as the backing database
-INFO [06-01|13:00:21.168] Allocated cache and file handles         database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata cache=2.00GiB handles=262,144
-INFO [06-01|13:00:21.399] Opened ancient database                  database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain readonly=false
-INFO [06-01|13:00:21.400] Opened Era store                         datadir=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain/era
-INFO [06-01|13:00:21.406] State scheme set to already existing     scheme=path
-INFO [06-01|13:00:21.406] Initialising Ethereum protocol           network=1337 dbversion=9
-WARN [06-01|13:00:21.406] Sanitizing invalid node buffer size      provided=1.00GiB updated=256.00MiB
-INFO [06-01|13:00:21.407] Load database journal from file          path=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/triedb/verkle.journal
-INFO [06-01|13:00:21.714] Opened ancient database                  database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/state_verkle readonly=false
-INFO [06-01|13:00:21.716] State snapshot generator is not compatible
-INFO [06-01|13:00:21.716] Initialized path database                triecache=614.00MiB statecache=409.00MiB buffer=256.00MiB state-history="last 90000 blocks" journal-dir=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/triedb verkle=true
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.716] ---------------------------------------------------------------------------------------------------------------------------------------------------------
-INFO [06-01|13:00:21.716] Chain ID:  1337 (unknown)
-INFO [06-01|13:00:21.716] Consensus: unknown
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.716] Pre-Merge hard forks (block based):
-INFO [06-01|13:00:21.716]  - Homestead:                   #0       
-INFO [06-01|13:00:21.716]  - Tangerine Whistle (EIP 150): #0       
-INFO [06-01|13:00:21.716]  - Spurious Dragon/1 (EIP 155): #0       
-INFO [06-01|13:00:21.716]  - Spurious Dragon/2 (EIP 158): #0       
-INFO [06-01|13:00:21.716]  - Byzantium:                   #0       
-INFO [06-01|13:00:21.716]  - Constantinople:              #0       
-INFO [06-01|13:00:21.716]  - Petersburg:                  #0       
-INFO [06-01|13:00:21.716]  - Istanbul:                    #0       
-INFO [06-01|13:00:21.716]  - Berlin:                      #0       
-INFO [06-01|13:00:21.716]  - London:                      #0       
-INFO [06-01|13:00:21.716]  - Arrow Glacier:               #0       
-INFO [06-01|13:00:21.716]  - Gray Glacier:                #0       
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.716] Merge configured:
-INFO [06-01|13:00:21.716]  - Total terminal difficulty:  0
-INFO [06-01|13:00:21.716]  - Merge netsplit block:       #0       
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.716] Post-Merge hard forks (timestamp based):
-INFO [06-01|13:00:21.716]  - Shanghai:                    @0         
-INFO [06-01|13:00:21.716]  - Cancun:                      @0          blob: (target: 3, max: 6, fraction: 3338477)
-INFO [06-01|13:00:21.716]  - Prague:                      @0          blob: (target: 6, max: 9, fraction: 5007716)
-INFO [06-01|13:00:21.716]  - Osaka:                       @0          blob: (target: 6, max: 9, fraction: 5007716)
-INFO [06-01|13:00:21.716]  - UBT:                         @0          blob: (nil)
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.716] All fork specifications can be found at https://ethereum.github.io/execution-specs/src/ethereum/forks/
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.716] ---------------------------------------------------------------------------------------------------------------------------------------------------------
-INFO [06-01|13:00:21.716] 
-INFO [06-01|13:00:21.718] Loaded most recent local block           number=6105 hash=dce96f..f41fef age=3s
-INFO [06-01|13:00:21.718] Loaded most recent local finalized block number=6080 hash=d283d6..6b244e age=41s
-INFO [06-01|13:00:21.719] Initialized transaction indexer          range="last 2350000 blocks"
-INFO [06-01|13:00:21.719] Initialized log indexer                  firstblock=0 lastblock=6105 firstmap=0 lastmap=0 headindexed=true
-INFO [06-01|13:00:21.753] Enabled full-sync                        head=6105 hash=dce96f..f41fef
-INFO [06-01|13:00:21.753] Unprotected transactions allowed
-INFO [06-01|13:00:21.753] Gasprice oracle is ignoring threshold set threshold=2
-INFO [06-01|13:00:21.754] Registered sync override service
-WARN [06-01|13:00:21.754] You are running Geth in --dev mode. Please note the following:
-WARN [06-01|13:00:21.754] 
-WARN [06-01|13:00:21.754]   1. This mode is only intended for fast, iterative development without assumptions on
-WARN [06-01|13:00:21.754]      security or persistence.
-WARN [06-01|13:00:21.754]   2. The database is created in memory unless specified otherwise. Therefore, shutting down
-WARN [06-01|13:00:21.754]      your computer or losing power will wipe your entire block data and chain state for
-WARN [06-01|13:00:21.754]      your dev environment.
-WARN [06-01|13:00:21.754]   3. A random, pre-allocated developer account will be available and unlocked as
-WARN [06-01|13:00:21.754]      eth.coinbase, which can be used for testing. The random dev account is temporary,
-WARN [06-01|13:00:21.754]      stored on a ramdisk, and will be lost if your machine is restarted.
-WARN [06-01|13:00:21.754]   4. Mining is enabled by default. However, the client will only seal blocks if transactions
-WARN [06-01|13:00:21.754]      are pending in the mempool. The miner's minimum accepted gas price is 1.
-WARN [06-01|13:00:21.754]   5. Networking is disabled; there is no listen-address, the maximum number of peers is set
-WARN [06-01|13:00:21.754]      to 0, and discovery is disabled.
-WARN [06-01|13:00:21.754] 
-INFO [06-01|13:00:21.754] Starting peer-to-peer node               instance=Geth/v1.17.3-unstable/linux-amd64/go1.24.9
-WARN [06-01|13:00:21.754] P2P server will be useless, neither dialing nor listening
-INFO [06-01|13:00:21.782] IPC endpoint opened                      url=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth.ipc
-ERROR[06-01|13:00:21.782] Unavailable modules in HTTP API list     unavailable=[personal] available="[admin debug web3 eth txpool miner net dev testing]"
-INFO [06-01|13:00:21.782] New local node record                    seq=1,780,289,664,965 id=c084d8867e8cc127 ip=127.0.0.1 udp=0 tcp=0
-INFO [06-01|13:00:21.783] Started P2P networking                   self=enode://ed0ccbffbfc0dc9f1b0f8e55d585ad3e61215b1974f32d9388e7ae53563e3ebe0172c21d754fa202c3a63f95bef3ff3ea24339ffdabd0115c47ec5b8d33136a9@127.0.0.1:0
-INFO [06-01|13:00:21.783] HTTP server started                      endpoint=127.0.0.1:8545 auth=false prefix= cors= vhosts=localhost
-INFO [06-01|13:00:21.783] WebSocket enabled                        url=ws://127.0.0.1:8546
-INFO [06-01|13:00:22.279] Loaded local transaction journal         transactions=4197 dropped=0
-INFO [06-01|13:00:22.985] Started log indexer
-INFO [06-01|13:00:23.056] Starting work on payload                 id=0x0338e260ed7a2426
-INFO [06-01|13:00:23.079] Updated payload                          id=0x0338e260ed7a2426 number=6106 hash=be3abd..8ba9f4 txs=0 withdrawals=0 gas=0 fees=0 root=bb9add..d54f1f elapsed=22.307ms
-INFO [06-01|13:00:23.079] Stopping work on payload                 id=0x0338e260ed7a2426 reason=delivery
-WARN [06-01|13:00:23.088] {"level":"warn","msg":"Slow block","block":{"number":6106,"hash":"0xbe3abd7e1b004a8cce5ca3da8536bf1fc18355ffeba0d89c995a9feec18ba9f4","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.053973,"state_read_ms":3.517985,"state_hash_ms":0.003131,"commit_ms":0.228411,"total_ms":8.538264},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
-INFO [06-01|13:00:23.088] Imported new potential chain segment     number=6106 hash=be3abd..8ba9f4 blocks=1 txs=0 mgas=0.000 elapsed=8.910ms  mgasps=0.000 triediffs=6.32MiB triedirty=14.84MiB
-INFO [06-01|13:00:23.088] Chain head was updated                   number=6106 hash=be3abd..8ba9f4 root=bb9add..d54f1f elapsed="75.307µs"
-INFO [06-01|13:00:24.107] Starting work on payload                 id=0x03f059f722a1cd13
-INFO [06-01|13:00:24.111] Updated payload                          id=0x03f059f722a1cd13 number=6107 hash=032708..4f77f4 txs=0 withdrawals=0 gas=0 fees=0 root=bb9add..d54f1f elapsed=3.374ms
-INFO [06-01|13:00:24.117] Stopping work on payload                 id=0x03f059f722a1cd13 reason=delivery
-WARN [06-01|13:00:24.132] {"level":"warn","msg":"Slow block","block":{"number":6107,"hash":"0x032708f82578177122d678774a0af616c551eb4aa4bfd0ba4205e3e4f74f77f4","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.042367,"state_read_ms":19.927295,"state_hash_ms":0.0019,"commit_ms":0.109972,"total_ms":20.849053},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
-INFO [06-01|13:00:24.132] Imported new potential chain segment     number=6107 hash=032708..4f77f4 blocks=1 txs=0 mgas=0.000 elapsed=21.060ms   mgasps=0.000 triediffs=6.32MiB triedirty=14.84MiB
-INFO [06-01|13:00:24.132] Chain head was updated                   number=6107 hash=032708..4f77f4 root=bb9add..d54f1f elapsed="30.702µs"
-INFO [06-01|13:00:25.164] Starting work on payload                 id=0x0318d608a4ce9352
-INFO [06-01|13:00:25.187] Updated payload                          id=0x0318d608a4ce9352 number=6108 hash=a4ce83..323e9e txs=0 withdrawals=0 gas=0 fees=0 root=bb9add..d54f1f elapsed=23.144ms
-INFO [06-01|13:00:25.187] Stopping work on payload                 id=0x0318d608a4ce9352 reason=delivery
-WARN [06-01|13:00:25.205] {"level":"warn","msg":"Slow block","block":{"number":6108,"hash":"0xa4ce83da0ab208be9c4fa295fec28f08cc7ac0a85d0f282ce0b3adaa0f323e9e","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.035777,"state_read_ms":16.46593,"state_hash_ms":0.002307,"commit_ms":0.205689,"total_ms":16.878281},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
-INFO [06-01|13:00:25.205] Imported new potential chain segment     number=6108 hash=a4ce83..323e9e blocks=1 txs=0 mgas=0.000 elapsed=17.071ms   mgasps=0.000 triediffs=6.32MiB triedirty=14.84MiB
-INFO [06-01|13:00:25.205] Chain head was updated                   number=6108 hash=a4ce83..323e9e root=bb9add..d54f1f elapsed="57.394µs"
-INFO [06-01|13:00:25.250] Submitted contract creation              hash=0x636483d50947d0da0c8690e15fa64266c89fce0f33e935c0243d85a987f69d87 from=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 nonce=1843 contract=0x6C3c8F75da59F5880D9e60b8f8ae639c2bC2E1DA value=0
-INFO [06-01|13:00:25.250] Submitted transaction                    hash=0xbd1c78752d5c0768655f61749c9451c0851dc5967df6f352b3c01488eb8574e1 from=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 nonce=1844 recipient=0xb1b5E58bdA04d31Fe9dD59CeF0EBF2ab2369F95b value=78,000,000
-INFO [06-01|13:00:26.218] Starting work on payload                 id=0x0343291f019cdbc6
-INFO [06-01|13:00:26.258] Updated payload                          id=0x0343291f019cdbc6 number=6109 hash=940ec6..900ec3 txs=2 withdrawals=0 gas=91710 fees=5.5026e-13 root=3df91c..8ce7a7 elapsed=40.014ms
-INFO [06-01|13:00:26.259] Stopping work on payload                 id=0x0343291f019cdbc6 reason=delivery
-WARN [06-01|13:00:26.284] {"level":"warn","msg":"Slow block","block":{"number":6109,"hash":"0x940ec626ccee23b6a2336a0c1bfe759fce8acfc6492980406f6e456fcd900ec3","gas_used":91710,"tx_count":2},"timing":{"execution_ms":0.127183,"state_read_ms":8.73922,"state_hash_ms":8.698672,"commit_ms":5.594715,"total_ms":25.543255},"throughput":{"mgas_per_sec":3.59038031762201},"state_reads":{"accounts":11,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":3,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":1,"code_bytes":305},"cache":{"account":{"hits":5,"misses":6,"hit_rate":45.45454545454545},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
-INFO [06-01|13:00:26.284] Imported new potential chain segment     number=6109 hash=940ec6..900ec3 blocks=1 txs=2 mgas=0.092 elapsed=25.819ms   mgasps=3.552 triediffs=5.01MiB triedirty=15.10MiB
-INFO [06-01|13:00:26.285] Chain head was updated                   number=6109 hash=940ec6..900ec3 root=3df91c..8ce7a7 elapsed="242.194µs"
-INFO [06-01|13:00:27.267] Submitted transaction                    hash=0xde268a7cd83c1b200464bbce2ff26e79f11c075902ac7e0d8e6978a1c3d64fd7 from=0xb1b5E58bdA04d31Fe9dD59CeF0EBF2ab2369F95b nonce=0    recipient=0x6C3c8F75da59F5880D9e60b8f8ae639c2bC2E1DA value=0
-INFO [06-01|13:00:27.292] Starting work on payload                 id=0x03268e9c599fea52
-INFO [06-01|13:00:27.488] Updated payload                          id=0x03268e9c599fea52 number=6110 hash=0bac7d..328ef5 txs=1 withdrawals=0 gas=5,920,754 fees=3.5524524e-11 root=1d0002..02f232 elapsed=196.712ms
-INFO [06-01|13:00:27.488] Stopping work on payload                 id=0x03268e9c599fea52 reason=delivery
-WARN [06-01|13:00:27.582] {"level":"warn","msg":"Slow block","block":{"number":6110,"hash":"0x0bac7dbcbfcd4e9840456f40c11389b7b0a0124bdffd17cbeb13c8bc7b328ef5","gas_used":5920754,"tx_count":1},"timing":{"execution_ms":53.723971,"state_read_ms":22.020548,"state_hash_ms":13.529233,"commit_ms":1.543965,"total_ms":93.362154},"throughput":{"mgas_per_sec":63.417067262608356},"state_reads":{"accounts":107,"storage_slots":785,"code":101,"code_bytes":3105},"state_writes":{"accounts":11,"accounts_deleted":0,"storage_slots":77,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":22,"misses":85,"hit_rate":20.5607476635514},"storage":{"hits":77,"misses":708,"hit_rate":9.80891719745223},"code":{"hits":101,"misses":0,"hit_rate":100,"hit_bytes":3105,"miss_bytes":0}}}
-INFO [06-01|13:00:27.582] Imported new potential chain segment     number=6110 hash=0bac7d..328ef5 blocks=1 txs=1 mgas=5.921 elapsed=93.591ms    mgasps=63.262 triediffs=5.10MiB triedirty=15.10MiB
-INFO [06-01|13:00:27.583] Chain head was updated                   number=6110 hash=0bac7d..328ef5 root=1d0002..02f232 elapsed="95.355µs"
-INFO [06-01|13:00:28.283] Submitted transaction                    hash=0x8b4f30a97d1501044c26c0cb2592994b10e0533124a45400c1cc9450ec7c52bd from=0xb1b5E58bdA04d31Fe9dD59CeF0EBF2ab2369F95b nonce=1    recipient=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 value=778,198
-INFO [06-01|13:00:28.595] Starting work on payload                 id=0x035573eec19f6988
-INFO [06-01|13:00:28.615] Updated payload                          id=0x035573eec19f6988 number=6111 hash=dcadce..e3deb1 txs=1 withdrawals=0 gas=21000     fees=2.1e-14       root=29bdbe..c4ae1e elapsed=19.911ms
-INFO [06-01|13:00:28.617] Stopping work on payload                 id=0x035573eec19f6988 reason=delivery
-WARN [06-01|13:00:28.640] {"level":"warn","msg":"Slow block","block":{"number":6111,"hash":"0xdcadced0ed8e8ed33125de195fc08308d75dd6ea993dd27710fed723afe3deb1","gas_used":21000,"tx_count":1},"timing":{"execution_ms":0.171227,"state_read_ms":6.647718,"state_hash_ms":4.860768,"commit_ms":0.496715,"total_ms":24.724464},"throughput":{"mgas_per_sec":0.8493611833202936},"state_reads":{"accounts":6,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":2,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":6,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
-INFO [06-01|13:00:28.640] Imported new potential chain segment     number=6111 hash=dcadce..e3deb1 blocks=1 txs=1 mgas=0.021 elapsed=24.881ms    mgasps=0.844  triediffs=5.10MiB triedirty=15.11MiB
-INFO [06-01|13:00:28.640] Chain head was updated                   number=6111 hash=dcadce..e3deb1 root=29bdbe..c4ae1e elapsed="43.047µs"
-INFO [06-01|13:00:29.647] Starting work on payload                 id=0x031bc5d8c3fb6e56
+WARN [06-02|04:33:05.726] Unknown config environment variable      envvar=GETH_PBT_BIN
+WARN [06-02|04:33:05.726] Unknown config environment variable      envvar=GETH_UBT_BIN
+INFO [06-02|04:33:05.737] Starting Geth on Ethereum mainnet...
+INFO [06-02|04:33:05.739] Maximum peer count                       ETH=0 total=0
+INFO [06-02|04:33:05.740] Smartcard socket not found, disabling    err="stat /run/pcscd/pcscd.comm: no such file or directory"
+WARN [06-02|04:33:05.742] Option --miner.etherbase is deprecated as the etherbase is set by the consensus client post-merge
+INFO [06-02|04:33:05.745] Set global gas cap                       cap=50,000,000
+INFO [06-02|04:33:06.544] Using developer account                  address=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+INFO [06-02|04:33:06.587] Using pebble as the backing database
+INFO [06-02|04:33:06.587] Allocated cache and file handles         database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata cache=2.00GiB handles=262,144
+INFO [06-02|04:33:06.830] Opened ancient database                  database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain readonly=true
+INFO [06-02|04:33:06.830] Opened Era store                         datadir=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain/era
+INFO [06-02|04:33:06.838] Initializing the KZG library             backend=gokzg
+INFO [06-02|04:33:06.839] Allocated trie memory caches             clean=614.00MiB dirty=1.00GiB
+INFO [06-02|04:33:06.853] Using pebble as the backing database
+INFO [06-02|04:33:06.853] Allocated cache and file handles         database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata cache=2.00GiB handles=262,144
+INFO [06-02|04:33:07.087] Opened ancient database                  database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain readonly=false
+INFO [06-02|04:33:07.087] Opened Era store                         datadir=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/chain/era
+INFO [06-02|04:33:07.096] State scheme set to already existing     scheme=path
+INFO [06-02|04:33:07.096] Initialising Ethereum protocol           network=1337 dbversion=9
+WARN [06-02|04:33:07.096] Sanitizing invalid node buffer size      provided=1.00GiB updated=256.00MiB
+INFO [06-02|04:33:07.098] Load database journal from file          path=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/triedb/verkle.journal
+INFO [06-02|04:33:09.420] Opened ancient database                  database=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/chaindata/ancient/state_verkle readonly=false
+INFO [06-02|04:33:09.420] State snapshot generator is not compatible
+INFO [06-02|04:33:09.420] Initialized path database                triecache=614.00MiB statecache=409.00MiB buffer=256.00MiB state-history="last 90000 blocks" journal-dir=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth/triedb verkle=true
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.421] ---------------------------------------------------------------------------------------------------------------------------------------------------------
+INFO [06-02|04:33:09.421] Chain ID:  1337 (unknown)
+INFO [06-02|04:33:09.421] Consensus: unknown
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.421] Pre-Merge hard forks (block based):
+INFO [06-02|04:33:09.421]  - Homestead:                   #0       
+INFO [06-02|04:33:09.421]  - Tangerine Whistle (EIP 150): #0       
+INFO [06-02|04:33:09.421]  - Spurious Dragon/1 (EIP 155): #0       
+INFO [06-02|04:33:09.421]  - Spurious Dragon/2 (EIP 158): #0       
+INFO [06-02|04:33:09.421]  - Byzantium:                   #0       
+INFO [06-02|04:33:09.421]  - Constantinople:              #0       
+INFO [06-02|04:33:09.421]  - Petersburg:                  #0       
+INFO [06-02|04:33:09.421]  - Istanbul:                    #0       
+INFO [06-02|04:33:09.421]  - Berlin:                      #0       
+INFO [06-02|04:33:09.421]  - London:                      #0       
+INFO [06-02|04:33:09.421]  - Arrow Glacier:               #0       
+INFO [06-02|04:33:09.421]  - Gray Glacier:                #0       
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.421] Merge configured:
+INFO [06-02|04:33:09.421]  - Total terminal difficulty:  0
+INFO [06-02|04:33:09.421]  - Merge netsplit block:       #0       
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.421] Post-Merge hard forks (timestamp based):
+INFO [06-02|04:33:09.421]  - Shanghai:                    @0         
+INFO [06-02|04:33:09.421]  - Cancun:                      @0          blob: (target: 3, max: 6, fraction: 3338477)
+INFO [06-02|04:33:09.421]  - Prague:                      @0          blob: (target: 6, max: 9, fraction: 5007716)
+INFO [06-02|04:33:09.421]  - Osaka:                       @0          blob: (target: 6, max: 9, fraction: 5007716)
+INFO [06-02|04:33:09.421]  - UBT:                         @0          blob: (nil)
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.421] All fork specifications can be found at https://ethereum.github.io/execution-specs/src/ethereum/forks/
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.421] ---------------------------------------------------------------------------------------------------------------------------------------------------------
+INFO [06-02|04:33:09.421] 
+INFO [06-02|04:33:09.422] Loaded most recent local block           number=10570 hash=c03cf7..b99201 age=8s
+INFO [06-02|04:33:09.422] Loaded most recent local finalized block number=10560 hash=aba138..cc16f2 age=27s
+INFO [06-02|04:33:09.423] Initialized transaction indexer          range="last 2350000 blocks"
+INFO [06-02|04:33:09.423] Initialized log indexer                  firstblock=0 lastblock=10570 firstmap=0 lastmap=0 headindexed=true
+INFO [06-02|04:33:09.469] Enabled full-sync                        head=10570 hash=c03cf7..b99201
+INFO [06-02|04:33:09.470] Unprotected transactions allowed
+INFO [06-02|04:33:09.470] Gasprice oracle is ignoring threshold set threshold=2
+INFO [06-02|04:33:09.470] Registered sync override service
+WARN [06-02|04:33:09.470] You are running Geth in --dev mode. Please note the following:
+WARN [06-02|04:33:09.470] 
+WARN [06-02|04:33:09.470]   1. This mode is only intended for fast, iterative development without assumptions on
+WARN [06-02|04:33:09.470]      security or persistence.
+WARN [06-02|04:33:09.470]   2. The database is created in memory unless specified otherwise. Therefore, shutting down
+WARN [06-02|04:33:09.470]      your computer or losing power will wipe your entire block data and chain state for
+WARN [06-02|04:33:09.470]      your dev environment.
+WARN [06-02|04:33:09.470]   3. A random, pre-allocated developer account will be available and unlocked as
+WARN [06-02|04:33:09.470]      eth.coinbase, which can be used for testing. The random dev account is temporary,
+WARN [06-02|04:33:09.470]      stored on a ramdisk, and will be lost if your machine is restarted.
+WARN [06-02|04:33:09.470]   4. Mining is enabled by default. However, the client will only seal blocks if transactions
+WARN [06-02|04:33:09.470]      are pending in the mempool. The miner's minimum accepted gas price is 1.
+WARN [06-02|04:33:09.470]   5. Networking is disabled; there is no listen-address, the maximum number of peers is set
+WARN [06-02|04:33:09.470]      to 0, and discovery is disabled.
+WARN [06-02|04:33:09.470] 
+INFO [06-02|04:33:09.470] Starting peer-to-peer node               instance=Geth/v1.17.3-unstable/linux-amd64/go1.24.9
+WARN [06-02|04:33:09.470] P2P server will be useless, neither dialing nor listening
+INFO [06-02|04:33:09.489] New local node record                    seq=1,780,289,665,519 id=c084d8867e8cc127 ip=127.0.0.1 udp=0 tcp=0
+INFO [06-02|04:33:09.489] Started P2P networking                   self=enode://ed0ccbffbfc0dc9f1b0f8e55d585ad3e61215b1974f32d9388e7ae53563e3ebe0172c21d754fa202c3a63f95bef3ff3ea24339ffdabd0115c47ec5b8d33136a9@127.0.0.1:0
+INFO [06-02|04:33:09.490] IPC endpoint opened                      url=/mnt/state_expiry_vol_data/ubt-vs-pbt-dbs/ubt/geth.ipc
+ERROR[06-02|04:33:09.490] Unavailable modules in HTTP API list     unavailable=[personal] available="[admin debug web3 eth txpool miner net dev testing]"
+INFO [06-02|04:33:09.491] HTTP server started                      endpoint=127.0.0.1:8545 auth=false prefix= cors= vhosts=localhost
+INFO [06-02|04:33:09.491] WebSocket enabled                        url=ws://127.0.0.1:8546
+INFO [06-02|04:33:10.356] Loaded local transaction journal         transactions=8140 dropped=0
+INFO [06-02|04:33:10.705] Started log indexer
+INFO [06-02|04:33:10.745] Starting work on payload                 id=0x0394fa9a65e5802a
+INFO [06-02|04:33:10.758] Updated payload                          id=0x0394fa9a65e5802a number=10571 hash=a0a4dd..a9acc5 txs=0 withdrawals=0 gas=0 fees=0 root=5fb61e..5bd9fd elapsed=12.436ms
+WARN [06-02|04:33:10.760] {"level":"warn","msg":"Slow block","block":{"number":10571,"hash":"0xa0a4dd213b39c6b8d9b8e6962f101de6344f9fa87909181f0ff05da7c3a9acc5","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.048032,"state_read_ms":0.745472,"state_hash_ms":0.001823,"commit_ms":0.270746,"total_ms":1.32879},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
+INFO [06-02|04:33:10.760] Imported new potential chain segment     number=10571 hash=a0a4dd..a9acc5 blocks=1 txs=0 mgas=0.000 elapsed=1.797ms  mgasps=0.000 triediffs=13.37MiB triedirty=194.38MiB
+INFO [06-02|04:33:10.760] Chain head was updated                   number=10571 hash=a0a4dd..a9acc5 root=5fb61e..5bd9fd elapsed="81.424µs"
+INFO [06-02|04:33:10.760] Stopping work on payload                 id=0x0394fa9a65e5802a reason=delivery
+INFO [06-02|04:33:11.763] Starting work on payload                 id=0x03a16e2a7642621a
+INFO [06-02|04:33:11.764] Updated payload                          id=0x03a16e2a7642621a number=10572 hash=27fd01..702059 txs=0 withdrawals=0 gas=0 fees=0 root=5fb61e..5bd9fd elapsed="576.607µs"
+INFO [06-02|04:33:11.764] Stopping work on payload                 id=0x03a16e2a7642621a reason=delivery
+WARN [06-02|04:33:11.769] {"level":"warn","msg":"Slow block","block":{"number":10572,"hash":"0x27fd0107bee90b50d82bb05c154629b4ace0ecb35da05089b19b675670702059","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.022903,"state_read_ms":0.749223,"state_hash_ms":0.001446,"commit_ms":0.585533,"total_ms":1.683584},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
+INFO [06-02|04:33:11.769] Imported new potential chain segment     number=10572 hash=27fd01..702059 blocks=1 txs=0 mgas=0.000 elapsed=5.028ms     mgasps=0.000 triediffs=13.37MiB triedirty=194.38MiB
+INFO [06-02|04:33:11.769] Chain head was updated                   number=10572 hash=27fd01..702059 root=5fb61e..5bd9fd elapsed="93.715µs"
+INFO [06-02|04:33:12.774] Starting work on payload                 id=0x0391dbbba242733f
+INFO [06-02|04:33:12.788] Updated payload                          id=0x0391dbbba242733f number=10573 hash=00efd5..4a0b8f txs=0 withdrawals=0 gas=0 fees=0 root=5fb61e..5bd9fd elapsed=13.804ms
+INFO [06-02|04:33:12.788] Stopping work on payload                 id=0x0391dbbba242733f reason=delivery
+WARN [06-02|04:33:12.851] {"level":"warn","msg":"Slow block","block":{"number":10573,"hash":"0x00efd55965e0e402c33889e2a702f3b187cf90220b91350ecb7471fc734a0b8f","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.046722,"state_read_ms":62.035947,"state_hash_ms":0.003399,"commit_ms":0.163932,"total_ms":62.480498},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
+INFO [06-02|04:33:12.851] Imported new potential chain segment     number=10573 hash=00efd5..4a0b8f blocks=1 txs=0 mgas=0.000 elapsed=62.742ms    mgasps=0.000 triediffs=13.37MiB triedirty=194.38MiB
+INFO [06-02|04:33:12.851] Chain head was updated                   number=10573 hash=00efd5..4a0b8f root=5fb61e..5bd9fd elapsed="64.357µs"
+INFO [06-02|04:33:13.878] Starting work on payload                 id=0x03ebc3a0548e03b6
+INFO [06-02|04:33:13.887] Updated payload                          id=0x03ebc3a0548e03b6 number=10574 hash=74dd5f..3c089d txs=0 withdrawals=0 gas=0 fees=0 root=5fb61e..5bd9fd elapsed=8.712ms
+INFO [06-02|04:33:13.887] Stopping work on payload                 id=0x03ebc3a0548e03b6 reason=delivery
+WARN [06-02|04:33:13.893] {"level":"warn","msg":"Slow block","block":{"number":10574,"hash":"0x74dd5fec8fc62114f1c7f7630073eb3578780e434c6ce73f149736ee2f3c089d","gas_used":0,"tx_count":0},"timing":{"execution_ms":0.026631,"state_read_ms":3.285793,"state_hash_ms":0.002489,"commit_ms":0.161526,"total_ms":5.776226},"throughput":{"mgas_per_sec":0},"state_reads":{"accounts":4,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":0,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":0,"misses":4,"hit_rate":0},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
+INFO [06-02|04:33:13.893] Imported new potential chain segment     number=10574 hash=74dd5f..3c089d blocks=1 txs=0 mgas=0.000 elapsed=5.978ms     mgasps=0.000 triediffs=13.37MiB triedirty=194.38MiB
+INFO [06-02|04:33:13.894] Chain head was updated                   number=10574 hash=74dd5f..3c089d root=5fb61e..5bd9fd elapsed="84.995µs"
+INFO [06-02|04:33:14.016] Submitted contract creation              hash=0x66461bf4cdf1d44f2e3a2ed88d7a77cd63a70786442944c162d0e6a77310f901 from=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 nonce=2885 contract=0x133d8F4aB5591ebF5a090b1dCc9d2c4Aa878dd2F value=0
+INFO [06-02|04:33:14.016] Submitted transaction                    hash=0x8cd1b11c497feac5dd2c22280241cc1b9fe828797b998e0656156ada92abd17b from=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 nonce=2886 recipient=0xd97cab2f3A3C686a381cBB741619b225afB336ff value=208,000,000
+INFO [06-02|04:33:14.898] Starting work on payload                 id=0x03307fb974a4ce7f
+INFO [06-02|04:33:14.938] Updated payload                          id=0x03307fb974a4ce7f number=10575 hash=16ed80..ae9369 txs=2 withdrawals=0 gas=91722 fees=5.50332e-13 root=ce2fdf..288c94 elapsed=40.410ms
+INFO [06-02|04:33:14.939] Stopping work on payload                 id=0x03307fb974a4ce7f reason=delivery
+WARN [06-02|04:33:14.967] {"level":"warn","msg":"Slow block","block":{"number":10575,"hash":"0x16ed805efbe910e348fbcc5cc6d8551ec47c350f6d1fb6618e5db5467aae9369","gas_used":91722,"tx_count":2},"timing":{"execution_ms":0.267792,"state_read_ms":13.977273,"state_hash_ms":2.725193,"commit_ms":9.772844,"total_ms":28.598675},"throughput":{"mgas_per_sec":3.2072115229114635},"state_reads":{"accounts":11,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":3,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":1,"code_bytes":305},"cache":{"account":{"hits":4,"misses":7,"hit_rate":36.36363636363637},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
+INFO [06-02|04:33:14.967] Imported new potential chain segment     number=10575 hash=16ed80..ae9369 blocks=1 txs=2 mgas=0.092 elapsed=28.858ms    mgasps=3.178 triediffs=10.10MiB triedirty=194.89MiB
+INFO [06-02|04:33:14.968] Chain head was updated                   number=10575 hash=16ed80..ae9369 root=ce2fdf..288c94 elapsed="140.122µs"
+INFO [06-02|04:33:15.029] Submitted transaction                    hash=0x0cc7291da492e6d9bf24b99e5ef01cccd470034565fde9b812a723189de8e41a from=0xd97cab2f3A3C686a381cBB741619b225afB336ff nonce=0    recipient=0x133d8F4aB5591ebF5a090b1dCc9d2c4Aa878dd2F value=0
+INFO [06-02|04:33:15.970] Starting work on payload                 id=0x0324c62c6db67145
+INFO [06-02|04:33:16.400] Updated payload                          id=0x0324c62c6db67145 number=10576 hash=e838fe..c5c307 txs=1 withdrawals=0 gas=15,913,624 fees=9.5481744e-11 root=7f39f0..ab6528 elapsed=430.423ms
+INFO [06-02|04:33:16.400] Stopping work on payload                 id=0x0324c62c6db67145 reason=delivery
+WARN [06-02|04:33:16.590] {"level":"warn","msg":"Slow block","block":{"number":10576,"hash":"0xe838fe44100d6316c98ee3113ccdfa99a5830cf5939ff5180bb4deb43ec5c307","gas_used":15913624,"tx_count":1},"timing":{"execution_ms":159.438013,"state_read_ms":23.76026,"state_hash_ms":3.720668,"commit_ms":1.604254,"total_ms":188.748256},"throughput":{"mgas_per_sec":84.31136974319911},"state_reads":{"accounts":107,"storage_slots":2161,"code":101,"code_bytes":3105},"state_writes":{"accounts":5,"accounts_deleted":0,"storage_slots":209,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":13,"misses":94,"hit_rate":12.149532710280374},"storage":{"hits":86,"misses":2075,"hit_rate":3.979639055992596},"code":{"hits":101,"misses":0,"hit_rate":100,"hit_bytes":3105,"miss_bytes":0}}}
+INFO [06-02|04:33:16.590] Imported new potential chain segment     number=10576 hash=e838fe..c5c307 blocks=1 txs=1 mgas=15.914 elapsed=189.057ms   mgasps=84.174 triediffs=10.17MiB triedirty=194.89MiB
+INFO [06-02|04:33:16.590] Chain head was updated                   number=10576 hash=e838fe..c5c307 root=7f39f0..ab6528 elapsed="142.298µs"
+INFO [06-02|04:33:17.049] Submitted transaction                    hash=0x139915bdc9534662b76ac7ef913e5acd7243c0b25ccdb17eb1586d0cfaa6d2ec from=0xd97cab2f3A3C686a381cBB741619b225afB336ff nonce=1    recipient=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 value=870,888
+INFO [06-02|04:33:17.595] Starting work on payload                 id=0x0343b976510f406e
+INFO [06-02|04:33:17.641] Updated payload                          id=0x0343b976510f406e number=10577 hash=72892e..95fdce txs=1 withdrawals=0 gas=21000      fees=2.1e-14       root=d008cd..2ee0e1 elapsed=45.965ms
+INFO [06-02|04:33:17.641] Stopping work on payload                 id=0x0343b976510f406e reason=delivery
+WARN [06-02|04:33:17.661] {"level":"warn","msg":"Slow block","block":{"number":10577,"hash":"0x72892e3d4cc29cd06c91d84f270e65df63b68d9e6a3a23ec604e242c1695fdce","gas_used":21000,"tx_count":1},"timing":{"execution_ms":0.057028,"state_read_ms":15.503664,"state_hash_ms":2.539438,"commit_ms":0.644087,"total_ms":19.113106},"throughput":{"mgas_per_sec":1.0987225205573599},"state_reads":{"accounts":6,"storage_slots":0,"code":0,"code_bytes":0},"state_writes":{"accounts":2,"accounts_deleted":0,"storage_slots":0,"storage_slots_deleted":0,"code":0,"code_bytes":0},"cache":{"account":{"hits":2,"misses":4,"hit_rate":33.33333333333333},"storage":{"hits":0,"misses":0,"hit_rate":0},"code":{"hits":0,"misses":0,"hit_rate":0,"hit_bytes":0,"miss_bytes":0}}}
+INFO [06-02|04:33:17.661] Imported new potential chain segment     number=10577 hash=72892e..95fdce blocks=1 txs=1 mgas=0.021  elapsed=19.434ms    mgasps=1.081  triediffs=10.16MiB triedirty=194.90MiB
+INFO [06-02|04:33:17.661] Chain head was updated                   number=10577 hash=72892e..95fdce root=d008cd..2ee0e1 elapsed="92.877µs"

@@ -207,38 +207,55 @@ for spec in "${CONFIGS[@]}"; do
     continue
   fi
 
-  # Phase 1: state-actor builds the base DB
-  if [ -d "$db_path" ]; then
-    log "  WARN: $db_path exists (incomplete prior run) — removing"
-    rm -rf "$db_path"
+  # If chaindata exists but contracts.json doesn't, do Phase 2 (deploy) only.
+  # Useful for redeploying with a different getter initcode against the same
+  # state-actor DB.
+  if [ -d "$db_path/geth/chaindata" ] && [ ! -f "$contracts_file" ]; then
+    log "  [resume] $db_path/geth/chaindata exists, contracts.json missing — Phase 2 (deploy) only"
+    SKIP_PHASE1=1
   fi
-  mkdir -p "$db_path"
 
-  # Build state-actor argv, appending opt-in scaling flags only if set
-  sa_args=(
-    -db "$db_path/geth/chaindata"
-    -binary-trie
-    -group-depth "$GROUP_DEPTH"
-    -target-size "$TARGET_SIZE"
-    -inject-accounts "$SEED_ACCOUNT"
-    -seed "$STATE_ACTOR_SEED"
-    -benchmark
-    -verbose
-  )
-  [ -n "$SA_ACCOUNTS" ]     && sa_args+=(-accounts "$SA_ACCOUNTS")
-  [ -n "$SA_CONTRACTS" ]    && sa_args+=(-contracts "$SA_CONTRACTS")
-  [ -n "$SA_MIN_SLOTS" ]    && sa_args+=(-min-slots "$SA_MIN_SLOTS")
-  [ -n "$SA_MAX_SLOTS" ]    && sa_args+=(-max-slots "$SA_MAX_SLOTS")
-  [ -n "$SA_DISTRIBUTION" ] && sa_args+=(-distribution "$SA_DISTRIBUTION")
+  # Phase 1: state-actor builds the base DB (skipped on resume)
+  if [ "${SKIP_PHASE1:-0}" != "1" ]; then
+    if [ -d "$db_path" ]; then
+      log "  WARN: $db_path exists (incomplete prior run) — removing"
+      rm -rf "$db_path"
+    fi
+    mkdir -p "$db_path"
+  fi
 
-  log "  [phase1] state-actor: target=$TARGET_SIZE seed=$STATE_ACTOR_SEED gd=$GROUP_DEPTH accounts=${SA_ACCOUNTS:-default} contracts=${SA_CONTRACTS:-default} slots=${SA_MIN_SLOTS:-default}..${SA_MAX_SLOTS:-default}"
-  "$sa_bin" "${sa_args[@]}" 2>&1 | tee "$gen_log"
+  if [ "${SKIP_PHASE1:-0}" != "1" ]; then
+    # Build state-actor argv, appending opt-in scaling flags only if set
+    sa_args=(
+      -db "$db_path/geth/chaindata"
+      -binary-trie
+      -group-depth "$GROUP_DEPTH"
+      -target-size "$TARGET_SIZE"
+      -inject-accounts "$SEED_ACCOUNT"
+      -seed "$STATE_ACTOR_SEED"
+      -benchmark
+      -verbose
+    )
+    [ -n "$SA_ACCOUNTS" ]     && sa_args+=(-accounts "$SA_ACCOUNTS")
+    [ -n "$SA_CONTRACTS" ]    && sa_args+=(-contracts "$SA_CONTRACTS")
+    [ -n "$SA_MIN_SLOTS" ]    && sa_args+=(-min-slots "$SA_MIN_SLOTS")
+    [ -n "$SA_MAX_SLOTS" ]    && sa_args+=(-max-slots "$SA_MAX_SLOTS")
+    [ -n "$SA_DISTRIBUTION" ] && sa_args+=(-distribution "$SA_DISTRIBUTION")
 
-  DB_SIZE=$(du -sh "$db_path/geth/chaindata" 2>/dev/null | cut -f1 || echo "N/A")
-  STATE_ROOT=$(grep -oE "State root.*0x[0-9a-fA-F]+" "$gen_log" | tail -1 | grep -oE "0x[0-9a-fA-F]+")
-  log "  [phase1] DB built: size=$DB_SIZE root=$STATE_ROOT"
+    log "  [phase1] state-actor: target=$TARGET_SIZE seed=$STATE_ACTOR_SEED gd=$GROUP_DEPTH accounts=${SA_ACCOUNTS:-default} contracts=${SA_CONTRACTS:-default} slots=${SA_MIN_SLOTS:-default}..${SA_MAX_SLOTS:-default}"
+    "$sa_bin" "${sa_args[@]}" 2>&1 | tee "$gen_log"
 
-  # Phase 2: deploy ERC20 + bloat
+    DB_SIZE=$(du -sh "$db_path/geth/chaindata" 2>/dev/null | cut -f1 || echo "N/A")
+    STATE_ROOT=$(grep -oE "State root.*0x[0-9a-fA-F]+" "$gen_log" | tail -1 | grep -oE "0x[0-9a-fA-F]+")
+    log "  [phase1] DB built: size=$DB_SIZE root=$STATE_ROOT"
+  else
+    DB_SIZE=$(du -sh "$db_path/geth/chaindata" 2>/dev/null | cut -f1 || echo "N/A")
+    log "  [phase1] skipped — reusing existing chaindata (size=$DB_SIZE)"
+  fi
+  # Reset per-loop flag so next config evaluates independently
+  SKIP_PHASE1=0
+
+  # Phase 2: deploy getter + empty-account contracts
   start_geth_for_deploy "$geth_bin" "$db_path" "$deploy_log"
 
   # Set gas limit and verify seed balance
@@ -263,6 +280,10 @@ for spec in "${CONFIGS[@]}"; do
   # (slot=stem_idx*256 ← 1) so cold SLOADs always hit populated slots.
   getter_log="$config_results/factorydeploy_getter.log"
   log "  [phase2] Deploying $NUM_CONTRACTS getter contracts (NUM_STEMS=$NUM_STEMS pre-populated stems, gas=$GETTER_DEPLOY_GAS)"
+  # --max-wallets/--refill-* tuned for large deploys: at 16M-gas/deploy ≈ 0.32 ETH
+  # per tx, default 10 wallets × 5 ETH funds only ~150 deploys before stalling.
+  # 100 wallets × 50 ETH gives ~15000 deploy capacity, enough for 700+ at the
+  # high gas limit without hitting refill intervals.
   "$SPAMOOR_BIN" factorydeploytx \
     --rpchost="http://localhost:8545" \
     --privkey="$PRIVKEY" \
@@ -270,6 +291,10 @@ for spec in "${CONFIGS[@]}"; do
     --init-code="$GETTER_INITCODE" \
     --start-salt=0 \
     --gaslimit="$GETTER_DEPLOY_GAS" \
+    --max-wallets=100 \
+    --refill-amount=50 \
+    --refill-balance=20 \
+    --refill-interval=30 \
     -v > "$getter_log" 2>&1
 
   FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$getter_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
@@ -284,16 +309,40 @@ for spec in "${CONFIGS[@]}"; do
     "$CAMPAIGN_DIR/scripts/compute_create2_addresses.py" \
     "$FACTORY" "$GETTER_INITCODE" "$NUM_CONTRACTS" "$contracts_file" 0 2>&1 | tee -a "$getter_log"
 
-  sample=$(python3 -c "import json; print(json.load(open('$contracts_file'))[0])")
-  code_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
-    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$sample\",\"latest\"],\"id\":1}" \
-    | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
-  if [ "$code_len" -eq 0 ] 2>/dev/null; then
-    log "    ERROR: sample getter $sample has no code (deploy/address mismatch)"
+  # Verify EVERY computed address has code on chain (not just the first).
+  # Spamoor's success message only confirms tx submission; some deploys can
+  # silently fail (insufficient funds for high-gas deploys, etc.). A partial
+  # deploy makes the address_stubs validator reject the campaign mid-flight.
+  missing=$(python3 - "$contracts_file" <<'PY'
+import json, sys, urllib.request, urllib.error
+import concurrent.futures
+addrs = json.load(open(sys.argv[1]))
+def has_code(addr):
+    payload = json.dumps({"jsonrpc":"2.0","method":"eth_getCode","params":[addr,"latest"],"id":1}).encode()
+    req = urllib.request.Request("http://localhost:8545", payload, {"Content-Type":"application/json"})
+    try:
+        r = urllib.request.urlopen(req, timeout=10).read()
+        result = json.loads(r).get("result","0x")
+        return addr, len(result)//2 - 1 if len(result) > 2 else 0
+    except Exception:
+        return addr, -1
+missing = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
+    for addr, code_len in ex.map(has_code, addrs):
+        if code_len <= 0:
+            missing.append(addr)
+for m in missing:
+    print(m)
+PY
+)
+  if [ -n "$missing" ]; then
+    n_missing=$(echo "$missing" | wc -l)
+    log "    ERROR: $n_missing of $NUM_CONTRACTS getter addresses have no code on chain"
+    log "    first 5 missing: $(echo "$missing" | head -5 | tr '\n' ' ')"
     kill_geth
     exit 1
   fi
-  log "    [getter] $NUM_CONTRACTS deployed, sample $sample (${code_len} bytes)"
+  log "    [getter] $NUM_CONTRACTS verified deployed (all addresses have code on chain)"
 
   # ── Deploy 2: empty-code accounts (account-zone benchmarks) ──────────────
   # Same CREATE2 factory + 5-byte init code that returns a 0-byte runtime → the
@@ -311,6 +360,10 @@ for spec in "${CONFIGS[@]}"; do
     --init-code="$ACCOUNT_INITCODE" \
     --start-salt="$ACCOUNT_START_SALT" \
     --gaslimit="$ACCOUNT_DEPLOY_GAS" \
+    --max-wallets=100 \
+    --refill-amount=50 \
+    --refill-balance=20 \
+    --refill-interval=30 \
     -v > "$account_log" 2>&1
 
   ACCOUNT_FACTORY=$(grep -oE "CREATE2 factory at: 0x[0-9a-fA-F]{40}" "$account_log" | tail -1 | grep -oE "0x[0-9a-fA-F]{40}")
@@ -325,16 +378,33 @@ for spec in "${CONFIGS[@]}"; do
     "$ACCOUNT_FACTORY" "$ACCOUNT_INITCODE" "$NUM_CONTRACTS" "$accounts_file" "$ACCOUNT_START_SALT" \
     2>&1 | tee -a "$account_log"
 
-  sample_account=$(python3 -c "import json; print(json.load(open('$accounts_file'))[0])")
-  # Empty-account: code length should be EXACTLY 1 byte (a single STOP). 1 byte is
-  # the minimum that satisfies execution-specs' address-stubs validator (which
-  # rejects zero-code stubs unless they're EOAs); a STOP runtime adds at most one
-  # code-chunk read per CALL — equally paid by UBT and PBT.
-  acode_len=$(curl -s http://localhost:8545 -H "Content-Type: application/json" \
-    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$sample_account\",\"latest\"],\"id\":1}" \
-    | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(len(r)//2-1 if len(r)>2 else 0)")
-  if [ "$acode_len" -ne 1 ] 2>/dev/null; then
-    log "    ERROR: sample account $sample_account has ${acode_len}B code (expected 1)"
+  # Verify EVERY empty-account address: expects exactly 1 byte of code (STOP).
+  account_missing=$(python3 - "$accounts_file" <<'PY'
+import json, sys, urllib.request
+import concurrent.futures
+addrs = json.load(open(sys.argv[1]))
+def code_len(addr):
+    payload = json.dumps({"jsonrpc":"2.0","method":"eth_getCode","params":[addr,"latest"],"id":1}).encode()
+    req = urllib.request.Request("http://localhost:8545", payload, {"Content-Type":"application/json"})
+    try:
+        r = urllib.request.urlopen(req, timeout=10).read()
+        result = json.loads(r).get("result","0x")
+        return addr, len(result)//2 - 1 if len(result) > 2 else 0
+    except Exception:
+        return addr, -2
+bad = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
+    for addr, n in ex.map(code_len, addrs):
+        if n != 1:
+            bad.append(f"{addr}:{n}")
+for b in bad:
+    print(b)
+PY
+)
+  if [ -n "$account_missing" ]; then
+    n_bad=$(echo "$account_missing" | wc -l)
+    log "    ERROR: $n_bad of $NUM_CONTRACTS account addresses have wrong code (expected 1B)"
+    log "    first 5: $(echo "$account_missing" | head -5 | tr '\n' ' ')"
     kill_geth
     exit 1
   fi
