@@ -164,6 +164,15 @@ python3 "$SCRIPTS_DIR/analyze_data.py" \
   --output "$RESULTS_DIR/analysis_results.json" \
   || log "  WARN: analyze_data.py exited non-zero (likely scipy missing or N=1) — JSON medians still useful"
 
+# Stage 5 (opt-in): flatten per-cell prometheus scrapes into one wide metrics CSV.
+if [ "${METRICS_SCRAPE:-0}" = "1" ]; then
+  log ""
+  log "── Stage 5: consolidate per-cell metrics ──"
+  python3 "$SCRIPTS_DIR/parse_metrics.py" "$RESULTS_DIR" --configs ubt pbt \
+    --output "$RESULTS_DIR/metrics_consolidated.csv" \
+    || log "  WARN: parse_metrics.py failed — raw *_metrics.prom files still present"
+fi
+
 log ""
 log "╔══════════════════════════════════════════════════════════════════╗"
 log "║  Campaign complete"

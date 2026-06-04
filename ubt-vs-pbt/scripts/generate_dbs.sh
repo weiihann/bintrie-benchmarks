@@ -264,6 +264,9 @@ for spec in "${CONFIGS[@]}"; do
     [ -n "$SA_MAX_SLOTS" ]    && sa_args+=(-max-slots "$SA_MAX_SLOTS")
     [ -n "$SA_DISTRIBUTION" ] && sa_args+=(-distribution "$SA_DISTRIBUTION")
     [ -n "$SA_GAS_LIMIT" ]    && sa_args+=(-gas-limit "$SA_GAS_LIMIT")
+    # Build-phase geth metrics (pebble disk/compaction/cache, process IO): state-actor
+    # writes the prometheus dump at end of build when --metrics-dump is given.
+    [ "${METRICS_SCRAPE:-0}" = "1" ] && sa_args+=(-metrics-dump "$config_results/state-actor_metrics.prom")
 
     log "  [phase1] state-actor: target=$TARGET_SIZE seed=$STATE_ACTOR_SEED gd=$GROUP_DEPTH accounts=${SA_ACCOUNTS:-default} contracts=${SA_CONTRACTS:-default} slots=${SA_MIN_SLOTS:-default}..${SA_MAX_SLOTS:-default}"
     "$sa_bin" "${sa_args[@]}" 2>&1 | tee "$gen_log"

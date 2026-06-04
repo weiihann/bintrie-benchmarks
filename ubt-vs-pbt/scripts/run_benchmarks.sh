@@ -33,6 +33,12 @@ GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-16}"
 # Dev block gas limit. Must be ≥ the single benchmark tx (GAS_BENCHMARK_VALUE M).
 # The 100M-gas variant bumps this to ≥100M (per-tx cap bypassed in geth).
 BENCH_DEV_GASLIMIT="${BENCH_DEV_GASLIMIT:-20000000}"
+# Per-cell geth metrics scrape. When METRICS_SCRAPE=1, geth runs with --metrics and a
+# standalone metrics HTTP server; after each cell's tx is mined we curl the full
+# prometheus dump to ${stem}_metrics.prom. geth restarts cold per cell, so each scrape is
+# that cell's cumulative DB activity (physical disk reads, pebble/pathdb caches, etc.).
+METRICS_SCRAPE="${METRICS_SCRAPE:-0}"
+METRICS_PORT="${METRICS_PORT:-6061}"
 # Touches-per-block capacity (sequence length) — passed through to the test so the
 # getter pre-population and the access sequence stay in lockstep.
 T_TOUCHES="${T_TOUCHES:-700}"
@@ -182,6 +188,13 @@ start_geth_for_bench() {
     cache_flag=(--cache 4096)
   fi
 
+  # Metrics: enable geth's go-metrics collection + a standalone prometheus endpoint so
+  # the per-cell scrape (below) can read physical-IO / cache internals.
+  local metrics_flag=()
+  if [ "$METRICS_SCRAPE" = "1" ]; then
+    metrics_flag=(--metrics --metrics.addr 127.0.0.1 --metrics.port "$METRICS_PORT")
+  fi
+
   # One tx per block: the dev block gas limit (20M) caps to one benchmark tx
   # (the test builds one ~6M-gas tx per invocation), so both configs produce
   # identical 1-tx blocks of equal gas — no block-packing asymmetry, throughput
@@ -193,6 +206,7 @@ start_geth_for_bench() {
     --dev --dev.period 1 --dev.gaslimit "$BENCH_DEV_GASLIMIT" \
     --miner.etherbase "$SEED_ACCOUNT" \
     "${cache_flag[@]}" \
+    "${metrics_flag[@]}" \
     --debug.logslowblock=0 \
     --http --http.addr 127.0.0.1 --http.port 8545 \
     --http.api eth,net,web3,debug,miner,txpool,admin,personal \
@@ -387,6 +401,17 @@ for spec in "${CONFIGS[@]}"; do
           -v > "$cfg_dir/${stem}_test.log" 2>&1
         test_exit=$?
         set -e
+
+        # Scrape geth's full prometheus metrics for this cell (geth still running, cold
+        # counters since process start ≈ this cell's DB activity). Best-effort.
+        if [ "$METRICS_SCRAPE" = "1" ]; then
+          if curl -s --max-time 30 "http://127.0.0.1:${METRICS_PORT}/debug/metrics/prometheus" \
+               -o "$cfg_dir/${stem}_metrics.prom" 2>/dev/null && [ -s "$cfg_dir/${stem}_metrics.prom" ]; then
+            log "  [metrics] scraped $(wc -l < "$cfg_dir/${stem}_metrics.prom") metric lines"
+          else
+            log "  [metrics] WARN: scrape failed or empty for $stem"
+          fi
+        fi
 
         cp "$cfg_dir/geth_current.log" "$cfg_dir/${stem}_geth.log"
 

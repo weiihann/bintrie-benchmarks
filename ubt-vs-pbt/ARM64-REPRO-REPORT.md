@@ -163,6 +163,53 @@ mixed workloads**, with only a slight read regression. Note this variant is deli
 synthetic — it patches out a consensus-level DoS protection (the per-tx gas cap). Results
 in `results/100mgas/`.
 
+## 100M-gas variant — physical-I/O metrics (Prometheus)
+
+The per-block JSON log gives timing + logical slot counts but not the **physical I/O**
+layer. A metrics-instrumented rerun (`results/100mgas-metrics/`) scrapes geth's full
+prometheus endpoint (`/debug/metrics/prometheus`) once per cell — clean because geth
+restarts cold per cell, so each scrape is that cell's cumulative DB activity. 1009 metrics
+per cell are kept (`metrics_consolidated.csv`); the report selects. state-actor also dumps
+its build-phase metrics (`state-actor_metrics.prom`). Workload-faithful: `state/read/storage`
+is identical UBT vs PBT (5002/cell), as expected.
+
+One caveat: geth's `eth/db/chaindata/disk/read` meter reads 0 here — pebble serves SSTable
+reads via mmap (page faults), which that meter doesn't count. The reliable read proxies are
+`cache/block/{hit,miss}` and `system/disk/read*`.
+
+**PBT/UBT ratios (median over 10 runs), across K:**
+
+| benchmark | block-cache miss | block-cache hit | disk write | compaction output |
+|---|--:|--:|--:|--:|
+| SLOAD K=1 | 1.075 | 1.544 | 10.38× | 109× |
+| SLOAD K=100 | 1.080 | 1.536 | 8.63× | 60× |
+| SLOAD K=4500 | 1.077 | 1.608 | 4.88× | 26× |
+| SSTORE K=1 | 1.066 | 1.508 | 4.74× | 24× |
+| SSTORE K=1000 | 0.945 | 1.429 | 3.32× | 6.7× |
+| SSTORE K=4500 | **0.790** | 1.454 | 2.55× | 4.2× |
+| mixed K=1 | 1.040 | 1.560 | 2.53× | 3.6× |
+| mixed K=4500 | **0.932** | 1.434 | 2.18× | 3.0× |
+
+### What the I/O layer reveals
+
+- **PBT has large write-amplification / compaction churn.** Even on pure reads, PBT writes
+  2.5–10× more to disk and triggers 3–109× more compaction output than UBT. The ratio
+  decreases monotonically with K (109→82→60→42→26 across the SLOAD sweep) — a systematic
+  effect, not bursty noise (median of 10 runs). This is the *mechanism* behind PBT's cost
+  that timing alone couldn't show: the zoned-key layout reshapes the LSM so commits +
+  background compaction move far more bytes.
+- **Block-cache behavior.** PBT consistently registers ~1.5× more block-cache **hits**
+  (it touches more, mostly-cached pebble blocks) and slightly more **misses** on reads /
+  low-K. The miss ratio crosses **below 1.0 only at high-K writes** (SSTORE K=4500 = 0.79,
+  mixed K=4500 = 0.93) — precisely the cells where PBT *wins* throughput, so its high-K
+  write advantage shows up as genuinely fewer cold block fetches.
+- Net: PBT's clustering does cut cold block misses where it wins (high-K writes), but its
+  standing cost is compaction/write-amplification, visible only at the I/O layer.
+
+Caveat: compaction is asynchronous and influenced by each DB's build history; treat the
+absolute compaction multiples as directional. The cache-miss and write-byte trends are the
+robust signals.
+
 ## Correctness gates
 
 | Run | block-shape (tx=1) | workload identity | invalid roots |
@@ -199,6 +246,7 @@ work (`storage_slots_written`, 702 slots/cell) is identical UBT vs PBT in every 
 
 | Dir | Contents |
 |---|---|
+| `100mgas-metrics/` | 100M-gas UBT vs PBT-v2 **with prometheus metrics** — block CSV + `metrics_consolidated.csv` (1009 metrics/cell) + per-cell `*_metrics.prom` + state-actor build dumps |
 | `full/` | UBT baseline + **v2 zoned PBT** consolidated CSV + per-config logs |
 | `pbt-parallel/` | UBT baseline + **v3 parallel-hash PBT** consolidated CSV + logs |
 | `pbt-zonecut/` | UBT baseline + **v4 zone-aware-cut PBT** consolidated CSV + logs |
