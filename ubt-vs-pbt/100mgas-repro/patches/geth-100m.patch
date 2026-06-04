@@ -1,0 +1,26 @@
+diff --git a/core/txpool/legacypool/legacypool.go b/core/txpool/legacypool/legacypool.go
+index 3d66803fd..59ce03515 100644
+--- a/core/txpool/legacypool/legacypool.go
++++ b/core/txpool/legacypool/legacypool.go
+@@ -53,7 +53,7 @@ const (
+ 	// non-trivial consequences: larger transactions are significantly harder and
+ 	// more expensive to propagate; larger transactions also take more resources
+ 	// to validate whether they fit into the pool or not.
+-	txMaxSize = 4 * txSlotSize // 128KB
++	txMaxSize = 32 * txSlotSize // BENCH PATCH (100M-gas locality campaign): 1MB to allow ~300KB calldata tx (was 4*txSlotSize=128KB).
+ )
+ 
+ var (
+diff --git a/params/protocol_params.go b/params/protocol_params.go
+index 9da275c48..df36c3e7f 100644
+--- a/params/protocol_params.go
++++ b/params/protocol_params.go
+@@ -28,7 +28,7 @@ const (
+ 	MaxGasLimit          uint64 = 0x7fffffffffffffff // Maximum the gas limit (2^63-1).
+ 	GenesisGasLimit      uint64 = 4712388            // Gas limit of the Genesis block.
+ 
+-	MaxTxGas uint64 = 1 << 24 // Maximum transaction gas limit after eip-7825 (16,777,216).
++	MaxTxGas uint64 = 1 << 30 // BENCH PATCH (100M-gas locality campaign): per-tx gas cap raised from 1<<24 (16.7M) to allow single 100M-gas tx.
+ 
+ 	MaximumExtraDataSize  uint64 = 32    // Maximum size extra data may be after Genesis.
+ 	ExpByteGas            uint64 = 10    // Times ceil(log256(exponent)) for the EXP instruction.

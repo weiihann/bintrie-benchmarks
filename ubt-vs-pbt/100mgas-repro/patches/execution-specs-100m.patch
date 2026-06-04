@@ -1,0 +1,51 @@
+diff --git a/packages/testing/src/execution_testing/forks/forks/eips/osaka/eip_7825.py b/packages/testing/src/execution_testing/forks/forks/eips/osaka/eip_7825.py
+index e36ce4b4..609d57a2 100644
+--- a/packages/testing/src/execution_testing/forks/forks/eips/osaka/eip_7825.py
++++ b/packages/testing/src/execution_testing/forks/forks/eips/osaka/eip_7825.py
+@@ -15,5 +15,7 @@ class EIP7825(BaseFork):
+ 
+     @classmethod
+     def transaction_gas_limit_cap(cls) -> int | None:
+-        """Transaction gas limit is capped at 16 million (2**24)."""
+-        return 16_777_216
++        """BENCH PATCH (100M-gas locality campaign): per-tx gas cap raised from
++        2**24 to 2**30 so the harness builds one ~100M-gas tx instead of
++        splitting into ~6. Pairs with geth's patched params.MaxTxGas."""
++        return 1 << 30
+diff --git a/tests/benchmark/stateful/bloatnet/test_locality_sweep.py b/tests/benchmark/stateful/bloatnet/test_locality_sweep.py
+index 3553d10c..e5dbe0dd 100644
+--- a/tests/benchmark/stateful/bloatnet/test_locality_sweep.py
++++ b/tests/benchmark/stateful/bloatnet/test_locality_sweep.py
+@@ -37,15 +37,23 @@ REFERENCE_SPEC_VERSION = "1.0"
+ # Kept stable across campaigns; harness sets these labels in stubs.json.
+ STUB_PREFIX = "scattered_target_"
+ 
+-# Fixed touches per block. Sized to one ~16 M-gas tx (Osaka per-tx cap = 16.78 M),
+-# so we get one tx per block with significant per-block fixed-overhead amortization.
+-# Each touch is ~22 k gas (cold CALL + cold SSTORE + getter framing).
+-T_TOUCHES = 700
+-
+-# Memory layout
+-TABLE = 0           # K addresses, 32 bytes each (max K = T_TOUCHES = 256 → 8 KB)
+-SEQUENCE = 0x10000  # T_TOUCHES (target_idx u128, stem_idx u128) pairs, 32 B each
+-SCRATCH = 0x20000
++# Touches-per-block CAPACITY (sequence length). Env-driven so the campaign can
++# scale it: a 16 M-gas tx fit ~700 touches; a 100 M-gas tx (per-tx cap bypassed)
++# fits ~4.4 k, so set T_TOUCHES with headroom above the gas-bound touch count.
++# Each touch is ~22 k gas (cold CALL + cold SLOAD/SSTORE + getter framing).
++T_TOUCHES = int(os.environ.get("T_TOUCHES", "700"))
++
++
++# Memory layout — derived from T_TOUCHES so the address TABLE (up to T_TOUCHES
++# addresses, since max K = T_TOUCHES) and the T_TOUCHES-pair SEQUENCE never
++# collide. Region starts are 4 KB-aligned.
++def _align4k(x: int) -> int:
++    return (x + 0xFFF) & ~0xFFF
++
++
++TABLE = 0                                      # up to T_TOUCHES addresses, 32 B each
++SEQUENCE = _align4k(32 * T_TOUCHES) or 0x1000  # T_TOUCHES pairs, 32 B each
++SCRATCH = _align4k(SEQUENCE + 32 * T_TOUCHES)
+ ARG_SLOT = SCRATCH          # getter calldata word 0
+ ARG_VALUE = SCRATCH + 32    # getter calldata word 1
+ ARG_ISWRITE = SCRATCH + 64  # getter calldata word 2
