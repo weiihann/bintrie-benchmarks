@@ -30,6 +30,12 @@ COLD_CACHE="${COLD_CACHE:-0}"
 # at ~22 k gas each ≈ ~6 M; this fits one tx (Osaka cap ≈ 16.7 M) in a 20 M-gas
 # block, so each invocation is one cold 1-tx block — apples-to-apples Mgas/s.
 GAS_BENCHMARK_VALUE="${GAS_BENCHMARK_VALUE:-16}"
+# Dev block gas limit. Must be ≥ the single benchmark tx (GAS_BENCHMARK_VALUE M).
+# The 100M-gas variant bumps this to ≥100M (per-tx cap bypassed in geth).
+BENCH_DEV_GASLIMIT="${BENCH_DEV_GASLIMIT:-20000000}"
+# Touches-per-block capacity (sequence length) — passed through to the test so the
+# getter pre-population and the access sequence stay in lockstep.
+T_TOUCHES="${T_TOUCHES:-700}"
 # K-sweep values per zone. T=700, K_max=T (full scatter), K_min=1 (max clustering).
 K_VALUES_STORAGE="${K_VALUES_STORAGE:-1 10 100 400 700}"
 K_VALUES_ACCOUNT="${K_VALUES_ACCOUNT:-10 256}"
@@ -50,6 +56,16 @@ CONFIGS=(
   "ubt|$GETH_UBT_BIN"
   "pbt|$GETH_PBT_BIN"
 )
+
+# Optional: restrict to specific configs (space-separated names) for targeted
+# reruns, e.g. CAMPAIGN_CONFIGS=pbt. Defaults to all configs when unset.
+if [ -n "${CAMPAIGN_CONFIGS:-}" ]; then
+  _sel=()
+  for _spec in "${CONFIGS[@]}"; do
+    for _w in $CAMPAIGN_CONFIGS; do [ "${_spec%%|*}" = "$_w" ] && _sel+=("$_spec"); done
+  done
+  CONFIGS=("${_sel[@]}")
+fi
 
 # Benchmark name | execution-specs test path | stub source | K values
 declare -a BENCH_NAMES=()
@@ -174,7 +190,7 @@ start_geth_for_bench() {
   log "  [geth] Starting ($config_id, gd=$GROUP_DEPTH, cold=$COLD_CACHE, dev.period=1, 1tx/block)"
   "$geth_bin" \
     --datadir "$datadir" \
-    --dev --dev.period 1 --dev.gaslimit 20000000 \
+    --dev --dev.period 1 --dev.gaslimit "$BENCH_DEV_GASLIMIT" \
     --miner.etherbase "$SEED_ACCOUNT" \
     "${cache_flag[@]}" \
     --debug.logslowblock=0 \
@@ -207,9 +223,10 @@ start_geth_for_bench() {
     fi
   done
 
+  _bgl_hex=$(printf '0x%x' "$BENCH_DEV_GASLIMIT")
   curl -s -X POST http://localhost:8545 \
     -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"miner_setGasLimit","params":["0x1312D00"],"id":1}' \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"miner_setGasLimit\",\"params\":[\"$_bgl_hex\"],\"id\":1}" \
     > /dev/null
 }
 
@@ -346,14 +363,13 @@ for spec in "${CONFIGS[@]}"; do
         # Per-run write offset: each run's writes start at a fresh, never-used slot
         # range (stride 100M >> ops/run), so SSTOREs are cold inserts, not warm
         # re-writes. Identical across configs (same run number) → same-state holds.
-        # TEMPORARY (Phase T rerun, 2026-06-01): shifted by +300 to write into
-        # slot ranges never touched by the prior campaigns on this DB
-        # (original 100M..2B; Phase L 10.1G..12G; Phase O/P 20.1G..22G).
-        # Fresh cold-init range 30.1G..32G.
-        # REVERT to `run * 100000000` before any future campaign that builds
-        # fresh DBs.
-        export SCATTERED_WRITE_OFFSET=$(( (run + 300) * 100000000 ))
+        # Canonical fresh-DB value is run*1e8. WRITE_OFFSET_RUN_SHIFT (default 0)
+        # bumps every run into a higher, untouched slot range — needed when reusing
+        # a DB that already has writes in the default range (cold-insert gas is
+        # offset-independent, so same-state still holds).
+        export SCATTERED_WRITE_OFFSET=$(( (run + ${WRITE_OFFSET_RUN_SHIFT:-0}) * 100000000 ))
         export LOCALITY_K="$K"
+        export T_TOUCHES
         log ""
         log "  --- $stem ($name) write-offset=$SCATTERED_WRITE_OFFSET K=$K ---"
 
