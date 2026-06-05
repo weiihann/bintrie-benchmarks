@@ -79,6 +79,90 @@ For the cell where PBT pulls clearest on x86, `mixed_k4500`:
 
 The clustering benefit shows up in `state_read_ms` — PBT fetches 31% less data per block. The Prometheus metrics confirm this at the OS level: `system_disk_readbytes` is consistently 20–30% lower for PBT across all sload + mixed cells. (Note: `eth/db/chaindata/disk/read` reads 0 because Pebble's mmap reads are page faults, uncounted by Go's metrics layer — the kernel-level `system_disk_read*` counters are the right proxy, as REPRODUCE.md calls out.)
 
+## Metrics deep-dive — what the 1009-column scrape reveals
+
+The throughput-level "parity at 100 M-gas" hides a structurally enormous gap below the wall-clock surface. `data/x86-runs/100mgas-metrics-20260604.csv` is per-cell × 1009 Prometheus metric columns (300 cells, ~5/cell-mean snapshot). Run `scripts/compare_metrics.py` against it to get the full ranked diff; the headline findings:
+
+### 1. Pebble SSTable layout — clustering compacts disk too
+
+| metric | UBT | PBT | ratio | takeaway |
+|---|--:|--:|--:|---|
+| `eth_db_chaindata_tables_level5` | 5699 | 1604 | **0.28×** | 72% fewer L5 SSTables on PBT |
+| `eth_db_chaindata_tables_level3` | 106 | 60 | 0.57× | Same trend at L3 |
+
+PBT's clustered keys merge into a *much* more compact disk layout — fewer files for Pebble to traverse on lookup.
+
+### 2. Kernel-level disk I/O — PBT reads 20–30% less per block
+
+`system_disk_readbytes` and `system_disk_readcount` are the only honest "disk read" metrics on Pebble (its mmap reads bypass Go's metrics). Per-cell:
+
+| cell | UBT MB read | PBT MB read | PBT/UBT |
+|---|--:|--:|--:|
+| `storage_sload_k1` | 146 | 115 | 0.79× |
+| `storage_sload_k4500` | 152 | 122 | 0.80× |
+| `storage_sstore_k1000` | 228 | 172 | 0.76× |
+| `storage_sstore_k4500` | 385 | 288 | 0.75× |
+| `storage_mixed_k1000` | 361 | 279 | 0.77× |
+| **`storage_mixed_k4500`** | **336** | **222** | **0.66×** |
+
+Across every single cell, PBT does fewer disk bytes per block. This is the design's hypothesis confirmed at the kernel-call level, completely independent of geth's internal timing.
+
+### 3. PathDB cache behaviour — the most striking signal
+
+`pathdb_clean_node_miss` measures how often a trie node lookup misses the clean-node cache (and has to go to Pebble). The cell-by-cell behaviour is the most dramatic structural signal in the campaign:
+
+| cell | UBT misses | PBT misses | PBT/UBT |
+|---|--:|--:|--:|
+| `storage_sstore_k1` | 59 | 14.5 | 0.25× |
+| `storage_sstore_k10` | 79 | 14.5 | 0.18× |
+| `storage_sstore_k100` | 269.5 | 15 | 0.06× |
+| `storage_sstore_k1000` | 2025 | 15 | **0.007×** |
+| `storage_sstore_k4500` | 6688 | 15 | **0.002×** |
+| `storage_mixed_k4500` | 2642 | 15 | **0.006×** |
+
+UBT's miss count grows exponentially with scatter (60 → 6700×); **PBT stays flat at ~15 misses regardless of K**. PBT's hot trie nodes live in the cache; UBT's scatter through it and thrash. This is the structural signal the throughput-level numbers cannot show.
+
+Related: `pathdb_dirty_node_read` (commit-path metric) is consistently ~0.54× for PBT on sload cells and 0.55–0.68× on mixed/sstore — PBT walks half as many dirty trie nodes during commit.
+
+### 4. EVM-internal latency — `chain_*` quantile timers
+
+geth records per-operation latency histograms inside `chain_*`. The P50 differences are striking (units = nanoseconds):
+
+| metric | UBT P50 | PBT P50 | ratio |
+|---|--:|--:|--:|
+| `chain_account_reads` (sload_k4500) | 13.2 M | 0.33 M | **0.025×** |
+| `chain_inserts` (sstore_k1000) | 17.6 M | 0.67 M | **0.038×** |
+| `chain_execution` (sload_k100) | 45.7 k | 21.1 k | 0.46× |
+
+PBT's per-operation latencies are **20–40× lower** at high scatter. These ns-level timers measure the trie/state-DB path inside the EVM, isolated from block-level setup costs.
+
+### Putting it together — why throughput is parity-only
+
+PBT shows structurally enormous improvements at every measured layer below `total_ms`:
+- 72% fewer SSTables in the disk hierarchy
+- 25–35% less kernel-level disk traffic per block
+- 5–100× fewer cache misses depending on workload
+- 20–40× faster per-operation trie/EVM latencies
+
+Yet `total_ms` lands ~at parity. The missing variable must be **execution-path overhead that PBT pays back at the block level** — possibly key-derivation cost (PBT's 16-bit zoned key prep does extra work per access), or some commit-phase cost the per-op timers don't capture. The metrics CSV pinpoints exactly where the budget goes, but identifying the absorber needs profiling (perf record / CPU sampling on a representative block), not more metrics.
+
+### How to reproduce / extend this analysis
+
+```bash
+# top 30 diverging metrics, full ranking written to disk
+uv run ubt-vs-pbt/scripts/compare_metrics.py \
+    --csv ubt-vs-pbt/data/x86-runs/100mgas-metrics-20260604.csv \
+    --top 30 \
+    --out-ranked ubt-vs-pbt/data/x86-runs/100mgas-metrics-ranked-20260604.csv
+```
+
+The script:
+1. Ranks all 1009 metrics by |log(PBT/UBT)| across all rows (most-divergent first)
+2. Per-cell breakdown for a curated set of metric families (Pebble, system disk, pathdb, EVM latency)
+3. Optional ranked CSV output for offline analysis (`data/x86-runs/100mgas-metrics-ranked-20260604.csv` already committed for browsing)
+
+Edit `FAMILIES` in `scripts/compare_metrics.py:25` to add metric groups (e.g., `chain_storage_*`, `eth_db_chaindata_compact_*`).
+
 ## New: DB snapshot step
 
 `run_campaign.sh` now supports `DB_SNAPSHOT_DIR=<path>`. Between Stage 1 (state-actor + getter deploy) and Stage 2 (benchmarks), it saves a clean post-deploy copy of both `ubt/` and `pbt/` chaindata + deploy artifacts (`contracts.json`, `accounts.json`, `state-actor.log`). On subsequent campaigns, if `$DB_BASE/<cfg>` is missing but `$DB_SNAPSHOT_DIR/<cfg>` exists, it restores transparently and Stage 1 turns into a noop.
