@@ -42,6 +42,9 @@ export K_VALUES_STORAGE="${K_VALUES_STORAGE:-1 10 100 400 700}"
 export K_VALUES_ACCOUNT="${K_VALUES_ACCOUNT:-10 256}"  # only used if account_* benchmarks added back
 export RESULTS_DIR
 export DB_BASE="${DB_BASE:-/tmp/ubt-vs-pbt-dbs}"
+# Optional snapshot dir for clean post-Stage-1 DBs. Set to enable
+# restore-before/save-after Stage 1; unset to disable. See Stage 1 block.
+export DB_SNAPSHOT_DIR="${DB_SNAPSHOT_DIR:-}"
 
 # state-actor scaling flags (opt-in; only used if set). Required for ≥10GB
 # scale runs — without them state-actor's defaults cap the base DB ~1MB.
@@ -103,11 +106,60 @@ log "║  NUM_RUNS=$NUM_RUNS  TARGET_SIZE=$TARGET_SIZE  GD=$GROUP_DEPTH  COLD_CA
 log "╚══════════════════════════════════════════════════════════════════╝"
 
 # =============================================================================
-# Stage 1: Generate DBs
+# Stage 1: Generate DBs (with optional snapshot restore/save)
 # =============================================================================
 log ""
 log "── Stage 1: generate_dbs.sh ──"
+
+# Optional DB snapshot dir: holds a clean post-Stage-1 copy of each config's
+# chaindata + deploy artifacts, for fast reruns. Restore-before / save-after:
+#   - Before Stage 1: if $DB_SNAPSHOT_DIR/$cfg exists and $DB_BASE/$cfg does
+#     not, restore — Stage 1's existing skip logic (contracts.json present →
+#     no deploy; chaindata present → no state-actor) then turns Stage 1 into
+#     a noop.
+#   - After Stage 1: if $DB_SNAPSHOT_DIR is set and snapshot doesn't yet
+#     exist, save (reflink-friendly cp -a so it's CoW-instant on btrfs/xfs).
+if [ -n "${DB_SNAPSHOT_DIR:-}" ]; then
+  mkdir -p "$DB_SNAPSHOT_DIR"
+  for cfg in ubt pbt; do
+    snap="$DB_SNAPSHOT_DIR/$cfg"
+    live="$DB_BASE/$cfg"
+    cfg_results="$RESULTS_DIR/$cfg"
+    if [ -d "$snap/geth/chaindata" ] && [ ! -d "$live/geth/chaindata" ]; then
+      log "  [snapshot] restoring $cfg chaindata from $snap (size=$(du -sh "$snap" | cut -f1))"
+      mkdir -p "$live"
+      cp -a --reflink=auto "$snap/." "$live/"
+      # contracts.json/accounts.json live under $cfg_results; restore those too
+      # so Stage 1's "deploy already done" check fires.
+      mkdir -p "$cfg_results"
+      for f in contracts.json accounts.json state-actor.log; do
+        if [ -f "$snap-results/$f" ] && [ ! -f "$cfg_results/$f" ]; then
+          cp -a "$snap-results/$f" "$cfg_results/$f"
+        fi
+      done
+    fi
+  done
+fi
+
 bash "$SCRIPTS_DIR/generate_dbs.sh"
+
+if [ -n "${DB_SNAPSHOT_DIR:-}" ]; then
+  for cfg in ubt pbt; do
+    snap="$DB_SNAPSHOT_DIR/$cfg"
+    live="$DB_BASE/$cfg"
+    cfg_results="$RESULTS_DIR/$cfg"
+    if [ -d "$live/geth/chaindata" ] && [ ! -d "$snap/geth/chaindata" ]; then
+      log "  [snapshot] saving $cfg chaindata to $snap (this may take a few minutes for ~100 GB)"
+      mkdir -p "$snap-results"
+      cp -a --reflink=auto "$live/." "$snap/"
+      # Stash deploy artifacts alongside so restores are self-contained.
+      for f in contracts.json accounts.json state-actor.log; do
+        [ -f "$cfg_results/$f" ] && cp -a "$cfg_results/$f" "$snap-results/$f"
+      done
+      log "  [snapshot] $cfg snapshot saved (size=$(du -sh "$snap" | cut -f1))"
+    fi
+  done
+fi
 
 # =============================================================================
 # Stage 2: Run benchmarks
