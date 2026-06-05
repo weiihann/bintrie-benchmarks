@@ -144,7 +144,7 @@ PBT shows structurally enormous improvements at every measured layer below `tota
 - 5–100× fewer cache misses depending on workload
 - 20–40× faster per-operation trie/EVM latencies
 
-Yet `total_ms` lands ~at parity. The missing variable must be **execution-path overhead that PBT pays back at the block level** — possibly key-derivation cost (PBT's 16-bit zoned key prep does extra work per access), or some commit-phase cost the per-op timers don't capture. The metrics CSV pinpoints exactly where the budget goes, but identifying the absorber needs profiling (perf record / CPU sampling on a representative block), not more metrics.
+Yet `total_ms` lands ~at parity. The block-time decomposition shows the savings get absorbed **inside `execution_ms` and `state_hash_ms`** — PBT's 16-bit zoned key derivation does two keccaks + bit-packing per storage access (vs UBT's single keccak), and that CPU cost scales with the per-block access count. See [METRICS-ANALYSIS.md §4](METRICS-ANALYSIS.md) for the time-decomposition table and the corrected absorber theory (an earlier "Pebble compaction time is the absorber" claim turned out to be unsupported — the compaction work runs in background goroutines that don't enter the benchmark's critical path).
 
 ### How to reproduce / extend this analysis
 

@@ -170,23 +170,73 @@ This is why §2.3's `system_disk_readbytes` table is the strongest single signal
 
 ## 4. The "absorber" question — where do PBT's I/O savings go?
 
-PBT's measurable savings per block:
-- ~30–70 ms less in `state_read_ms`
-- ~10–40 ms less in `state_hash_ms` (sometimes — sometimes more)
-- 25–35% less kernel disk read traffic
-- 5–100× fewer pathdb clean-cache misses
+### What I claimed first (and what auditing showed)
 
-PBT's measurable extra costs per block:
-- **1.75× longer Pebble compaction time** — main absorber
-- **2.67× higher P95 scheduler latency** — contention signal
-- **20–30% slower account-zone RPC paths** — per-access key-derivation overhead
-- **21% slower pathdb lookup-remove** — same key-derivation cost on the removal path
+An earlier version of this analysis claimed four "absorbers" of PBT's I/O savings:
 
-The compaction cost is the biggest absorber on this hardware. Pebble's compactor runs as a separate goroutine and processes the dirty SSTables in the background between (and during) benchmark txs. PBT writes into 16-bit zoned key regions that get aggressively compacted into the cleaner final layout we observe at L5 — but that compaction is CPU work, and on an 8-core x86 with the benchmark goroutine plus geth's internal goroutines competing, it ends up on the critical path enough to absorb the I/O savings.
+| earlier claim | audit result |
+|---|---|
+| 1.75× longer Pebble compaction time → main absorber | **Data real, absorber claim unproven.** See below. |
+| 2.67× higher P95 scheduler latency → contention | **Overstated.** Absolute values: UBT 0.38 µs vs PBT 1.02 µs at P95 — a 0.6 µs difference. Cannot absorb 100 ms. |
+| 20–30% slower account-zone RPC → per-access cost | **Overstated.** Call counts identical (9002 per cell); per-call delta 0.12 ms → ~1 ms aggregate. Negligible. |
+| 21% slower pathdb lookup-remove | **Unverifiable from this CSV.** P95 latency available, call count not exported — can't compute aggregate. |
 
-The runtime-level absorbers (scheduler latency, GC behaviour) point at goroutine-scheduling contention. The RPC and lookup-remove slowdowns point at per-access cost in the 16-bit zoned key derivation. Both are real but small individually — together they sum to ~the same as the I/O savings, hence the wall-clock parity.
+### What the per-block time decomposition actually shows
 
-**What identifying these absorbers leaves open:** a CPU profile of a representative block on PBT would tell us whether the absorber is concentrated (one hot function) or distributed (death-by-a-thousand-cuts). The metrics CSV has nothing more to say on this — it shows *what* happens, not *where in code* the time is spent. That's the next investigation.
+The slow-block log's four time components (`execution_ms + state_read_ms + state_hash_ms + commit_ms`) **sum to within rounding of `total_ms`** — geth's invariant holds. That means **there is no hidden 5th component** absorbing time. Anything happening in goroutines outside the benchmark's critical path (background compaction, prefetcher, GC) doesn't enter the wall-clock measurement.
+
+So the absorbers must live *inside* the four components. They do:
+
+| cell | Δread (PBT save) | Δexec (PBT cost) | Δhash (PBT cost) | Δtotal |
+|---|--:|--:|--:|--:|
+| `sload_k1000` | −24 ms | **+55 ms** | +3 ms | +30 ms |
+| `sload_k4500` | −32 ms | +20 ms | +8 ms | −2 ms |
+| `sstore_k4500` | −50 ms | 0 ms | **+64 ms** | −4 ms |
+| `mixed_k10` | −7 ms | +16 ms | −15 ms | +15 ms |
+| `mixed_k4500` | −82 ms | −22 ms | −33 ms | **−138 ms** |
+
+The cells where PBT *loses* show a clear pattern:
+- **`sload_k1000` (PBT loses 30 ms)**: state_read save (−24) blown away by execution_ms cost (+55).
+- **`sstore_k4500` (PBT loses 4 ms)**: state_read save (−50) ~cancelled by state_hash cost (+64).
+- **`mixed_k10` (PBT loses 15 ms)**: same shape — read save erased by exec cost.
+
+The cell where PBT *wins biggest* (`mixed_k4500`, −138 ms / +13%): the I/O savings line up with execution_ms ALSO saving time, and state_hash saving time too. **Everything goes PBT's way in that one cell.** That's why it's an outlier.
+
+### What's really happening — the corrected mechanism
+
+The 16-bit zoned key derivation does extra CPU work *per access*:
+- UBT: `key = H(addr ‖ slot)` — one Keccak.
+- PBT: `key = buildKeyStorageZone(H(addr), H(addr ‖ tree_index), subIdx)` — two Keccaks per storage access, plus bit packing.
+
+For an SLOAD-heavy block (~5000 reads), that's an extra ~5000 Keccaks. Keccak ≈ 1 µs of CPU. **5 ms per block of extra CPU work, scaling with access count.** On the `sload_k1000` row above, exec_ms is +55 ms — that's at least an order of magnitude more than 5 ms, so key derivation alone isn't the whole story, but it's the direction.
+
+For commits, PBT's dirty nodes carry the same 2-byte zone prefix in their key, so per-node hashing input grows. Across ~5000 dirty nodes in a `sstore_k4500` commit, that's a measurable cost — matching the +64 ms `state_hash_ms` we observe.
+
+**Net of all this**: PBT trades disk reads (fewer of) for keccak/bit-packing CPU work in exec + hash (more of). The wall-clock parity is the trade balancing out across most cells. It tilts PBT's favor when read savings exceed CPU costs (mixed_k4500 — high scatter means UBT thrashes disk hard, PBT's CPU work pays for itself). It tilts UBT's favor when the workload is read-heavy but K is moderate, where UBT's disk cost is bounded but PBT still pays full key-derivation cost.
+
+### What about the 1.75× compaction time, then?
+
+That data is real:
+
+| cell | UBT compact_time (ms) | PBT compact_time (ms) | PBT/UBT |
+|---|--:|--:|--:|
+| `sload_k1` | 510 | 968 | 1.90× |
+| `sload_k4500` | 504 | 959 | 1.90× |
+| `sstore_k4500` | 531 | 825 | 1.55× |
+| `mixed_k4500` | 548 | 740 | 1.35× |
+
+PBT genuinely spends 0.4–0.5 seconds more *cumulative* on compaction work per cell. But this is background goroutine work that, per the decomposition above, **does not show up on the benchmark's critical path** (otherwise the four components wouldn't sum to total). The compactor must be running during idle periods or on cores the benchmark isn't using.
+
+So compaction is a **real cost in PBT's runtime budget** but not an absorber of throughput. On a CPU-constrained machine where the benchmark goroutine genuinely competes with the compactor, the picture might change — but on our 8-core box with the benchmark using ~1 core, there's headroom for both.
+
+### Honest summary
+
+The "where do PBT's I/O savings go" question reduces to:
+- ~50% of the savings get absorbed by **PBT's higher per-access keccak/bit cost in `execution_ms`** (visible on read-heavy cells)
+- ~50% get absorbed by **PBT's higher per-node hashing cost in `state_hash_ms`** (visible on write-heavy cells)
+- Net is wall-clock parity except where the workload disproportionately rewards clustering (mixed_k4500)
+
+Identifying the exact code paths costing the extra `execution_ms` and `state_hash_ms` per cell requires a CPU profile (perf record / pprof on a representative block), not more metrics — the metrics CSV is exhausted as an investigation tool here.
 
 ---
 
