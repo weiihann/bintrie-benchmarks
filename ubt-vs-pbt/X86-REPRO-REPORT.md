@@ -81,7 +81,7 @@ The clustering benefit shows up in `state_read_ms` — PBT fetches 31% less data
 
 ## Metrics deep-dive — what the 1009-column scrape reveals
 
-The throughput-level "parity at 100 M-gas" hides a structurally enormous gap below the wall-clock surface. `data/x86-runs/100mgas-metrics-20260604.csv` is per-cell × 1009 Prometheus metric columns (300 cells, ~5/cell-mean snapshot). Run `scripts/compare_metrics.py` against it to get the full ranked diff; the headline findings:
+The throughput-level "parity at 100 M-gas" hides a structurally enormous gap below the wall-clock surface. `data/x86-runs/100mgas-metrics-20260604.csv` is per-cell × 1009 Prometheus metric columns (300 cells, ~5/cell-mean snapshot). **See [METRICS-ANALYSIS.md](METRICS-ANALYSIS.md) for the namespace-by-namespace walkthrough** (chain, pathdb, system, eth, plus the "absorber" hypothesis explaining where PBT's I/O savings get spent). Headline findings below; full per-namespace breakdown in the companion doc.
 
 ### 1. Pebble SSTable layout — clustering compacts disk too
 

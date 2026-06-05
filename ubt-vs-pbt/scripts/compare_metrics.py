@@ -154,12 +154,85 @@ def ratio_mark(r: float) -> str:
     return ""
 
 
+def namespace_of(metric: str) -> str:
+    """First token of the metric name (geth's go-metrics underscore convention)."""
+    return metric.split("_")[0]
+
+
+def per_namespace_summary(rows: list[dict[str, str]], metric_cols: list[str]) -> dict[str, dict]:
+    """For each top-level namespace (chain, eth, pathdb, system, etc.), summarize
+    how many metrics carry signal vs diverge, and capture the top diverging
+    metrics in that namespace."""
+    by_ns: dict[str, dict] = defaultdict(lambda: {"total": 0, "signal": 0, "divergent": []})
+    for m in metric_cols:
+        ns = namespace_of(m)
+        by_ns[ns]["total"] += 1
+        u = [asnum(r[m]) for r in rows if r["config"] == "ubt"]
+        p = [asnum(r[m]) for r in rows if r["config"] == "pbt"]
+        u = [v for v in u if v is not None]
+        p = [v for v in p if v is not None]
+        if not (u and p):
+            continue
+        um, pm = median(u), median(p)
+        if um == 0 and pm == 0:
+            continue
+        by_ns[ns]["signal"] += 1
+        if um == 0:
+            ratio = math.inf
+        elif pm == 0:
+            ratio = 0.0
+        else:
+            ratio = pm / um
+        # Capture only the "divergent" entries (≥15% gap, since within ±15% is
+        # within the run-to-run noise band documented in REPRODUCE.md).
+        if abs(math.log(ratio + 1e-100)) > math.log(1.15) or ratio in (0, math.inf):
+            by_ns[ns]["divergent"].append((m, um, pm, ratio))
+
+    for ns in by_ns:
+        # Sort divergent by absolute log distance descending.
+        def keyfn(t: tuple) -> float:
+            r = t[3]
+            if r in (0, math.inf):
+                return math.inf
+            return abs(math.log(r))
+        by_ns[ns]["divergent"].sort(key=keyfn, reverse=True)
+    return by_ns
+
+
+def print_namespace_summary(by_ns: dict[str, dict], top_per_ns: int) -> None:
+    rows = sorted(by_ns.items(), key=lambda kv: -kv[1]["signal"])
+    print(f"=== Namespace summary (signal = median nonzero in either config) ===")
+    print(f"  {'namespace':<14} {'total':>6} {'signal':>7} {'divergent':>10}")
+    print("  " + "-" * 42)
+    for ns, c in rows:
+        if c["signal"] == 0:
+            continue
+        print(f"  {ns:<14} {c['total']:>6} {c['signal']:>7} {len(c['divergent']):>10}")
+    print()
+
+    for ns, c in rows:
+        if not c["divergent"]:
+            continue
+        print(f"=== {ns} — top {min(top_per_ns, len(c['divergent']))} divergent metrics ===")
+        print(f"  {'metric':<58} {'UBT med':>14} {'PBT med':>14} {'PBT/UBT':>9}")
+        print("  " + "-" * 95)
+        for m, u, pm, r in c["divergent"][:top_per_ns]:
+            mark = ratio_mark(r)
+            ratio_s = "∞" if r == math.inf else f"{r:.3f}"
+            print(f"  {m[:57]:<58} {fmt_num(u):>14} {fmt_num(pm):>14} {ratio_s:>9}{mark}")
+        print()
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Compare UBT vs PBT metrics.")
     p.add_argument("--csv", default="data/x86-runs/100mgas-metrics-20260604.csv",
                    type=Path, help="metrics_consolidated.csv path")
     p.add_argument("--top", type=int, default=20,
                    help="show this many top metrics in the overall ranking")
+    p.add_argument("--by-namespace", action="store_true",
+                   help="emit per-namespace divergent-metric breakdown (chain, pathdb, etc.)")
+    p.add_argument("--top-per-namespace", type=int, default=8,
+                   help="how many top divergent metrics to show per namespace")
     p.add_argument("--out-ranked", type=Path, default=None,
                    help="if set, write the full ranked CSV here")
     args = p.parse_args()
@@ -194,6 +267,10 @@ def main() -> None:
                 w.writerow([m, u, pm, r, lr])
         print(f"wrote {args.out_ranked} ({len(ranked)} rows)")
         print()
+
+    if args.by_namespace:
+        ns_summary = per_namespace_summary(rows, metric_cols)
+        print_namespace_summary(ns_summary, args.top_per_namespace)
 
     # 2. Per-cell breakdown for curated families
     print("=== Per-cell PBT/UBT ratios for selected metric families ===")
