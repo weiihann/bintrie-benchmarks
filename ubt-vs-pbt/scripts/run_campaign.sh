@@ -225,6 +225,21 @@ if [ "${METRICS_SCRAPE:-0}" = "1" ]; then
     || log "  WARN: parse_metrics.py failed — raw *_metrics.prom files still present"
 fi
 
+# Stage 6: diff the state-actor build-phase metric dumps so we can see how
+# UBT vs PBT differ during the chain-build itself (separate from benchmark
+# behaviour). state-actor's --metrics-dump patch wrote these per config.
+UBT_SA="$RESULTS_DIR/ubt/state-actor_metrics.prom"
+PBT_SA="$RESULTS_DIR/pbt/state-actor_metrics.prom"
+if [ -f "$UBT_SA" ] && [ -f "$PBT_SA" ]; then
+  log ""
+  log "── Stage 6: state-actor build-phase metrics comparison ──"
+  python3 "$SCRIPTS_DIR/compare_stateactor_metrics.py" \
+    --ubt "$UBT_SA" --pbt "$PBT_SA" --top 30 \
+    --out-csv "$RESULTS_DIR/stateactor_metrics_compare.csv" \
+    2>&1 | sed 's/^/  /' \
+    || log "  WARN: compare_stateactor_metrics.py failed — raw .prom files still present"
+fi
+
 log ""
 log "╔══════════════════════════════════════════════════════════════════╗"
 log "║  Campaign complete"

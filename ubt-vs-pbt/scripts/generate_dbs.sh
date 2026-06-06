@@ -281,6 +281,25 @@ for spec in "${CONFIGS[@]}"; do
   # Reset per-loop flag so next config evaluates independently
   SKIP_PHASE1=0
 
+  # Phase 1.5: compact chaindata so benchmarks start against a settled Pebble
+  # level layout (no L0 stack from state-actor's bulk writes). Without this,
+  # the first benchmark cells trigger background compaction that steals CPU
+  # and pollutes early measurements, and UBT/PBT can hand off to phase 2
+  # with different level structures even though the EVM state is identical.
+  # Skip if already compacted (idempotent via marker file).
+  COMPACT_MARKER="$db_path/geth/chaindata/.compacted"
+  if [ ! -f "$COMPACT_MARKER" ]; then
+    DB_PRE=$(du -sh "$db_path/geth/chaindata" 2>/dev/null | cut -f1 || echo "N/A")
+    log "  [phase1.5] compacting chaindata (size=$DB_PRE, may take a few minutes)..."
+    "$geth_bin" --datadir "$db_path" --override.ubt=0 --bintrie.groupdepth "$GROUP_DEPTH" \
+      db compact 2>&1 | tail -3 | sed 's/^/    /'
+    DB_POST=$(du -sh "$db_path/geth/chaindata" 2>/dev/null | cut -f1 || echo "N/A")
+    touch "$COMPACT_MARKER"
+    log "  [phase1.5] compaction complete (size=$DB_POST)"
+  else
+    log "  [phase1.5] chaindata already compacted (marker present) — skipping"
+  fi
+
   # Phase 2: deploy getter + empty-account contracts
   start_geth_for_deploy "$geth_bin" "$db_path" "$deploy_log"
 
